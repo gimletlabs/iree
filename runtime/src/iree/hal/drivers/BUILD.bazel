@@ -21,6 +21,7 @@ string_list_flag(
         "local-task",
         "null",
         "vulkan",
+        "hip",
     ],
 )
 
@@ -29,6 +30,7 @@ UNCONDITIONAL_DRIVERS = [
     "local-task",
     "null",
     "vulkan",
+    "hip",
 ]
 
 [
@@ -75,6 +77,10 @@ iree_runtime_cc_library(
            }) +
            select({
                ":vulkan_enabled": ["//runtime/src/iree/hal/drivers/vulkan/registration"],
+               "//conditions:default": [],
+           }) +
+           select({
+               ":hip_enabled": ["//runtime/src/iree/hal/drivers/hip/registration"],
                "//conditions:default": [],
            }),
 )
