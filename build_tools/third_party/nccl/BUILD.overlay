@@ -8,6 +8,6 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "headers",
-    hdrs = ["nccl.h",],
+    hdrs = ["third_party/nccl/nccl.h",],
     include_prefix = "third_party/nccl",
 )
