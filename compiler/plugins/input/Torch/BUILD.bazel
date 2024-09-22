@@ -1,0 +1,24 @@
+load("//build_tools/bazel:build_defs.oss.bzl", "iree_compiler_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+iree_compiler_cc_library(
+    name = "TorchInputRegistration",
+    srcs = [
+        "PluginRegistration.cpp",
+    ],
+    deps = [
+        "//compiler/plugins/input/Torch/InputConversion:InputConversion",
+        "@torch-mlir//:TorchMLIRTorchConversionDialect",
+        "@torch-mlir//:TorchMLIRTorchDialect",
+        "@torch-mlir//:TorchMLIRTorchPasses",
+        "@torch-mlir//:TorchMLIRTorchOnnxToTorch",
+        "@torch-mlir//:TorchMLIRConversionPasses",
+        "@torch-mlir//:TorchMLIRTMTensorDialect",
+    ],
+)
+ 
