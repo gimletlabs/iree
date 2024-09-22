@@ -67,7 +67,7 @@ def iree_bitcode_library(
     clang_tool = "@llvm-project//clang:clang"
     link_tool = "@llvm-project//llvm:llvm-link"
     builtin_headers_dep = "@llvm-project//clang:builtin_headers_gen"
-    builtin_headers_path = "external/_main~_repo_rules~llvm-project/clang/staging/include/"
+    builtin_headers_path = "external/llvm-project/clang/staging/include/"
 
     base_copts = [
         # Target architecture
@@ -127,8 +127,8 @@ def iree_bitcode_library(
                     "$(location %s)" % (clang_tool),
                     "-isystem $(BINDIR)/%s" % builtin_headers_path,
                     " ".join(base_copts + copts),
-                    " ".join(["-I $(BINDIR)/runtime/src"]),
-                    " ".join(["-I runtime/src"]),
+                    " ".join(["-I $(BINDIR)/external/com_github_iree_org_iree/runtime/src"]),
+                    " ".join(["-I external/com_github_iree_org_iree/runtime/src"]),
                     "-o $(location %s)" % (bitcode_out),
                     "$(location %s)" % (src),
                 ]),
@@ -322,7 +322,7 @@ def iree_amdgpu_bitcode_library(
             "$(location %s)" % (clang_tool),
             "$(location %s)" % (src),
             "-o $(location %s)" % (out),
-            "-I .",
+            "-I external/com_github_iree_org_iree",
         ] + base_copts + copts),
         tools = [
             clang_tool,

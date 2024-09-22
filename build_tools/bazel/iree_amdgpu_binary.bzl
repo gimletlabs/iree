@@ -37,7 +37,7 @@ def iree_amdgpu_binary(
     link_tool = "@llvm-project//llvm:llvm-link"
     lld_tool = "@llvm-project//lld:lld"
     builtin_headers_dep = "@llvm-project//clang:builtin_headers_gen"
-    builtin_headers_path = "external/_main~_repo_rules~llvm-project/clang/staging/include/"
+    builtin_headers_path = "external/llvm-project/clang/staging/include/"
 
     base_copts = [
         # C configuration.
@@ -54,8 +54,8 @@ def iree_amdgpu_binary(
 
         # Header paths for builtins and our own includes.
         "-isystem $(BINDIR)/%s" % builtin_headers_path,
-        "-I$(BINDIR)/runtime/src",
-        "-Iruntime/src",
+        "-I$(BINDIR)/external/com_github_iree_org_iree/runtime/src",
+        "-Iexternal/com_github_iree_org_iree/runtime/src",
 
         # Avoid warnings about things we do that are not compatible across
         # compilers but are fine because we're only ever compiling with clang.

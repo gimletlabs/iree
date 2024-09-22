@@ -84,6 +84,7 @@ def iree_c_module(
             # barriers and other cases where an SSA value is consumed by an op
             # that produces a new value.
             "-Wno-unused-but-set-variable",
+            "-I.",
         ],
         deps = deps_list,
         **kwargs
