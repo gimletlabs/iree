@@ -80,6 +80,7 @@ def iree_c_module(
         srcs = ["//runtime/src/iree/vm:module_impl_emitc.c", h_file_output],
         copts = [
             "-DEMITC_IMPLEMENTATION='\"$(location %s)\"'" % h_file_output,
+            "-I.",
         ],
         deps = deps_list,
         **kwargs

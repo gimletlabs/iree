@@ -17,7 +17,7 @@ def iree_flatbuffer_c_library(
 
     flags = [
         "-o$(RULEDIR)",
-        "-I runtime/src",
+        "-I external/com_github_iree_org_iree/runtime/src",
     ] + flatcc_args
 
     out_stem = "%s" % (srcs[0].replace(".fbs", ""))
