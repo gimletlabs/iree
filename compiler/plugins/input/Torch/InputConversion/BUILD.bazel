@@ -1,0 +1,61 @@
+load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//build_tools/bazel:build_defs.oss.bzl", "iree_compiler_cc_library")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["layering_check"],
+    licenses = ["notice"],  # Apache 2.0
+)
+
+td_library(
+    name = "passes_td_library",
+    srcs = [
+        "Passes.td",
+    ],
+    deps = [
+        "@llvm-project//mlir:PassBaseTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "passes_tblgen_cc_library",
+    tbl_outs = [
+        (
+            ["-gen-pass-decls"],
+            "Passes.h.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "Passes.td",
+    deps = [":passes_td_library"],
+)
+
+iree_compiler_cc_library(
+    name = "InputConversion",
+    srcs = [
+        "BitCastQuantTensor.cpp",
+        "ConvertTMTensorToLinalgExt.cpp",
+        "FuncConversion.cpp",
+        "Passes.cpp",
+        "SetStrictSymbolicShapes.cpp",
+    ],
+    hdrs = ["Passes.h"],
+    deps = [
+        ":passes_tblgen_cc_library",
+        "//compiler/src/iree/compiler/Dialect/Flow/IR:IR",
+        "//compiler/src/iree/compiler/Dialect/HAL/IR:IR",
+        "//compiler/src/iree/compiler/Dialect/LinalgExt/IR:IR",
+        "//compiler/src/iree/compiler/Dialect/Stream/IR:IR",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:MemRefDialect",
+        "@llvm-project//mlir:TensorDialect",
+        "@llvm-project//mlir:Pass",
+        "@torch-mlir//:TorchMLIRTorchConversionDialect",
+        "@torch-mlir//:TorchMLIRTorchDialect",
+        "@torch-mlir//:TorchMLIRTorchPasses",
+        "@torch-mlir//:TorchMLIRTorchOnnxToTorch",
+        "@torch-mlir//:TorchMLIRTorchConversionPasses",
+        "@torch-mlir//:TorchMLIRTMTensorDialect",
+    ],
+)
