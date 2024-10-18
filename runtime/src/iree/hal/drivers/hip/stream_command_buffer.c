@@ -478,6 +478,16 @@ static iree_status_t iree_hal_hip_stream_command_buffer_dispatch(
       z0, iree_hal_hip_native_executable_lookup_kernel_params(
               executable, entry_point, &kernel_params));
 
+  // If any of the workgroup counts/block dims are zero, we can skip execution
+  // of the kernel. This prevents a 'hipErrorInvalidConfiguration' error when
+  // launching the kernel.
+  if (workgroup_count[0] == 0 || workgroup_count[1] == 0 ||
+      workgroup_count[2] == 0 || kernel_params->block_dims[0] == 0 ||
+      kernel_params->block_dims[1] == 0 || kernel_params->block_dims[2] == 0) {
+    IREE_TRACE_ZONE_END(z0);
+    return iree_ok_status();
+  }
+
   IREE_HAL_STREAM_TRACE_ZONE_BEGIN_EXTERNAL(
       command_buffer->tracing_context, &command_buffer->tracing_event_list,
       IREE_HAL_STREAM_TRACING_VERBOSITY_FINE,
