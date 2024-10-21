@@ -19,6 +19,8 @@
 
 namespace mlir::iree_compiler::IREE::HAL {
 
+void initializeLLVMTargets();
+
 // Defines kinds of Sanitizer
 // The order in enum class should be same as one in flat buffer schema
 enum class SanitizerKind {
