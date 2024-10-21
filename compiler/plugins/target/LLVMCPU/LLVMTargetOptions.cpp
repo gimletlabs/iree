@@ -407,7 +407,7 @@ createTargetMachine(const LLVMTarget &target) {
   return machine;
 }
 
-static void initializeLLVMTargets() {
+void initializeLLVMTargets() {
 // Dynamically do preprocessor dispatch to initialize only targets that we
 // care about if they are enabled. Unfortunately, the way the LLVM macros
 // for this are set up and the inability to do a conditional within a macro
