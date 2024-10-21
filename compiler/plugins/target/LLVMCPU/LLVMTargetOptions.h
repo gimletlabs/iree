@@ -128,8 +128,9 @@ struct LLVMTarget {
   // Link built-in ukernel bitcode libraries into generated executables.
   bool linkUkernelBitcode = DEFAULT_LINK_UKERNEL_BITCODE;
 
-private:
   void populateDefaultsFromTargetMachine();
+
+private:
 
   std::string triple;
   std::string cpu;
