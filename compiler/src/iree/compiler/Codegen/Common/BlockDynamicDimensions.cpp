@@ -164,6 +164,10 @@ blockDynamicDimensionsOfValue(RewriterBase &rewriter,
   return collapseShape;
 }
 
+//===---------------------------------------------------------------------===//
+// Methods for blocking operands of operations
+//===---------------------------------------------------------------------===//
+
 /// For an operation, replace the operands at indices specified in
 /// `limitToOperandIndices` with the result of
 /// `tensor.expand_shape`/`tensor.collapse_shape` pair to materialize the
@@ -208,9 +212,33 @@ static LogicalResult blockDynamicDimensions(
   return success();
 }
 
-/// Insert `tensor.expand_shape` operations to materialize in IR information
-/// about dynamic dimensions that are known to be a multiple of a compile-time
-/// know value, for the operands of `iree_linalg_ext.attention` operation.
+/// Generic method for blocking all operands of an operation.
+static LogicalResult blockDynamicDimensionsOfAllTensorOperands(
+    RewriterBase &rewriter, const TensorDynamicDimAnalysis &dynamicDimAnalysis,
+    Operation *op) {
+  llvm::SmallDenseSet<int64_t> tensorOperandsList;
+  for (OpOperand &opOperand : op->getOpOperands()) {
+    if (isa<RankedTensorType>(opOperand.get().getType())) {
+      tensorOperandsList.insert(opOperand.getOperandNumber());
+    }
+  }
+  return blockDynamicDimensions(rewriter, dynamicDimAnalysis, op,
+                                tensorOperandsList);
+}
+
+/// Block dynamic dimensions in operands of `LinalgOp`.
+static LogicalResult
+blockDynamicDimensions(RewriterBase &rewriter,
+                       const TensorDynamicDimAnalysis &dynamicDimAnalysis,
+                       linalg::LinalgOp linalgOp) {
+  if (linalg::isaContractionOpInterface(linalgOp)) {
+    return blockDynamicDimensionsOfAllTensorOperands(
+        rewriter, dynamicDimAnalysis, linalgOp);
+  }
+  return success();
+}
+
+/// Block dynamic dimensions in operands of `AttentionOp`.
 static LogicalResult
 blockDynamicDimensions(RewriterBase &rewriter,
                        const TensorDynamicDimAnalysis &dynamicDimAnalysis,
@@ -223,8 +251,7 @@ blockDynamicDimensions(RewriterBase &rewriter,
                                 prunedOperandsList);
 }
 
-/// Generic method to block dynamic dimensions for all tensor operands.
-/// Only used for testing for now
+/// Dispatch to methods that block dynamic dimensions of operations.
 static LogicalResult
 blockDynamicDimensions(RewriterBase &rewriter,
                        const TensorDynamicDimAnalysis &dynamicDimAnalysis,
@@ -234,19 +261,15 @@ blockDynamicDimensions(RewriterBase &rewriter,
         return blockDynamicDimensions(rewriter, dynamicDimAnalysis,
                                       attentionOp);
       })
+      .Case<linalg::LinalgOp>([&](auto linalgOp) {
+        return blockDynamicDimensions(rewriter, dynamicDimAnalysis, linalgOp);
+      })
       .Default([&](Operation *op) {
         if (!test) {
           return success();
         }
-        // The default path here is for now only for testing.
-        llvm::SmallDenseSet<int64_t> tensorOperandsList;
-        for (OpOperand &opOperand : operation->getOpOperands()) {
-          if (isa<RankedTensorType>(opOperand.get().getType())) {
-            tensorOperandsList.insert(opOperand.getOperandNumber());
-          }
-        }
-        return blockDynamicDimensions(rewriter, dynamicDimAnalysis, operation,
-                                      tensorOperandsList);
+        return blockDynamicDimensionsOfAllTensorOperands(
+            rewriter, dynamicDimAnalysis, op);
       });
 }
 
@@ -278,7 +301,11 @@ void BlockDynamicDimensionsPass::runOnOperation() {
     // Add patterns to "push down" the `tensor.collapse_shape` patterns (which
     // are the dual of the patterns to "bubble up" `tensor.expand_shape`
     // patterns)
-    linalg::ControlFusionFn controlFn = [](OpOperand *) { return true; };
+    linalg::ControlFusionFn controlFn = [](OpOperand *opOperand) {
+      // Avoid fusion with fills/empty using the propagation patterns.
+      return !isa_and_nonnull<linalg::FillOp, tensor::EmptyOp>(
+          opOperand->getOwner());
+    };
     linalg::populateFoldReshapeOpsByExpansionPatterns(bubbleExpandShapePatterns,
                                                       controlFn);
     IREE::LinalgExt::populateFoldReshapeOpsByExpansionPatterns(
@@ -288,6 +315,8 @@ void BlockDynamicDimensionsPass::runOnOperation() {
     // bindings or `tensor.empty` operations.
     populateReshapeToInterfaceTensorPatterns(bubbleExpandShapePatterns);
     tensor::populateFoldTensorEmptyPatterns(bubbleExpandShapePatterns);
+    linalg::FillOp::getCanonicalizationPatterns(bubbleExpandShapePatterns,
+                                                context);
     // Add some additional patterns that can simplify the IR and remove dead
     // operations.
     memref::populateResolveRankedShapedTypeResultDimsPatterns(
@@ -315,6 +344,9 @@ void BlockDynamicDimensionsPass::runOnOperation() {
                                                        context);
     tensor::CollapseShapeOp::getCanonicalizationPatterns(
         removeBarrierOpsPatterns, context);
+    tensor::populateFoldTensorEmptyPatterns(removeBarrierOpsPatterns);
+    memref::populateResolveRankedShapedTypeResultDimsPatterns(
+        removeBarrierOpsPatterns);
     if (failed(applyPatternsAndFoldGreedily(
             operation, std::move(removeBarrierOpsPatterns)))) {
       operation->emitOpError("failed in cleanup patterns");
