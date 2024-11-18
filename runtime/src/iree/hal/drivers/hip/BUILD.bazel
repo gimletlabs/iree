@@ -16,6 +16,7 @@ iree_runtime_cc_library(
     name = "hip",
     srcs = [
         "api.h",
+        "context_util.h",
         "event_pool.c",
         "event_pool.h",
         "event_semaphore.c",
