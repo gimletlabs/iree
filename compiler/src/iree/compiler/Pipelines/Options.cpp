@@ -384,7 +384,7 @@ void DispatchCreationOptions::bindOptions(OptionsBinder &binder) {
       llvm::cl::cat(category));
   binder.opt<bool>(
       "iree-dispatch-creation-enable-aggressive-fusion", enableAggressiveFusion,
-      {initAtOpt(llvm::OptimizationLevel::O0, false),
+      {initAtOpt(llvm::OptimizationLevel::O0, true),
        initAtOpt(llvm::OptimizationLevel::O2, true)},
       llvm::cl::desc("Aggressive fusion opportunities that are behind a flag "
                      "since all backends dont support it yet"),

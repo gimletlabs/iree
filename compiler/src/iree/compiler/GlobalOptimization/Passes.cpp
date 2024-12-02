@@ -171,7 +171,7 @@ void buildGlobalOptimizationPassPipeline(
       // decisions as SetEncoding is expected to pick the ideal layout for
       // that operation anyway, and this way we only need to make such a
       // decision once.
-      .addPredicatedPass(clEnableTransposePropagation,
+      .addPredicatedPass(clEnableTransposePropagation || transformOptions.transposePropagation,
                          [&]() {
                            PropagateLinalgTransposePassOptions options;
                            options.enableAggressivePropagation =

@@ -57,6 +57,14 @@ struct TransformOptions : PassPipelineOptions<TransformOptions> {
                      "parameters in the module."),
       llvm::cl::init(""),
   };
+  Option<bool> transposePropagation{
+      *this,
+      "transpose-propagation",
+      llvm::cl::desc(
+          "Enables transpose propagation, equivalent to "
+          "iree-global-opt-propagate-transposes."),
+      llvm::cl::init(false),
+  };
   Option<bool> aggressiveTransposePropagation{
       *this,
       "aggressive-transpose-propagation",

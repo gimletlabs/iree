@@ -158,6 +158,9 @@ struct ParameterOptions {
 struct GlobalOptimizationOptions {
   llvm::OptimizationLevel optLevel = llvm::OptimizationLevel::O0;
 
+  // Enables transpose propagation, equivalent to iree-global-opt-propagate-transposes.
+  bool transposePropagation = false;
+
   // Enables aggressive propagation of transposes to the inputs of named ops,
   // rewriting named ops as fused generics.
   bool aggressiveTransposePropagation = false;
@@ -267,7 +270,7 @@ struct SchedulingOptions {
 struct DispatchCreationOptions {
   llvm::OptimizationLevel optLevel;
 
-  bool enableAggressiveFusion = false;
+  bool enableAggressiveFusion = true;
   bool enableFuseMultiUse = true;
   bool enableSplitReduction = false;
 
