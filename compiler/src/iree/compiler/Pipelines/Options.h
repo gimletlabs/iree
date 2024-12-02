@@ -105,6 +105,9 @@ struct GlobalOptimizationOptions {
   // module.
   std::string parameterSplatExportFile = "";
 
+  // Enables transpose propagation, equivalent to iree-global-opt-propagate-transposes.
+  bool transposePropagation = false;
+
   // Enables aggressive propagation of transposes to the inputs of named ops,
   // rewriting named ops as fused generics.
   bool aggressiveTransposePropagation = false;

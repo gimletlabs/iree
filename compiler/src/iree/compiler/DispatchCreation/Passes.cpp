@@ -80,7 +80,7 @@ static llvm::cl::opt<bool> clEnableAggressiveFusion(
     "iree-dispatch-creation-enable-aggressive-fusion",
     llvm::cl::desc("Aggressive fusion opportunities that are behind a flag "
                    "since all backends dont support it yet"),
-    llvm::cl::init(false));
+    llvm::cl::init(true));
 
 static llvm::cl::opt<bool> clEnableDataTiling(
     "iree-dispatch-creation-experimental-data-tiling",
