@@ -152,7 +152,7 @@ void buildGlobalOptimizationPassPipeline(
       // that operation anyway, and this way we only need to make such a
       // decision once.
       .addPredicatedPass(
-          clEnableTransposePropagation,
+          clEnableTransposePropagation || transformOptions.options.transposePropagation,
           [&]() {
             return createPropagateLinalgTransposePass(
                 transformOptions.options.aggressiveTransposePropagation);
