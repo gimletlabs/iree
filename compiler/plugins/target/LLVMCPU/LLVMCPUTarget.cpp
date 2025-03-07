@@ -428,7 +428,7 @@ public:
             cast<IntegerAttr>(workgroupSizeValues[2]).getInt());
       }
 
-      LibraryBuilder::SourceLocation sourceLocation;
+      LibraryBuilder::SourceLocation sourceLocation = {"", "", 0};
       if (options.debugLevel >= 1) {
         if (auto loc = findFirstFileLoc(exportOp.getLoc())) {
           sourceLocation = {"", loc->getFilename().str(), loc->getLine()};
