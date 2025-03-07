@@ -403,7 +403,7 @@ public:
         dispatchAttrs.bindingCount = layoutAttr.getBindings().size();
       }
 
-      LibraryBuilder::SourceLocation sourceLocation;
+      LibraryBuilder::SourceLocation sourceLocation = {"", "", 0};
       if (options.debugLevel >= 1) {
         if (auto loc = findFirstFileLoc(exportOp.getLoc())) {
           sourceLocation = {"", loc->getFilename().str(), loc->getLine()};
