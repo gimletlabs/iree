@@ -1997,12 +1997,12 @@ static const iree_vm_native_function_ptr_t iree_hal_module_funcs_[] = {
   {                                                            \
       .shim = (iree_vm_native_function_shim_t)                 \
           iree_vm_shim_##arg_types##_##ret_types,              \
-      .target = (iree_vm_native_function_target_t)(target_fn), \
+      .target = (iree_vm_native_function_target2_t)(target_fn), \
   },
 #define EXPORT_FN_CUSTOM(name, target_fn, arg_types, ret_types)   \
   {                                                               \
       .shim = (iree_vm_native_function_shim_t)(target_fn##_shim), \
-      .target = (iree_vm_native_function_target_t)(target_fn),    \
+      .target = (iree_vm_native_function_target2_t)(target_fn),    \
   },
 #include "iree/modules/hal/exports.inl"  // IWYU pragma: keep
 #undef EXPORT_FN
