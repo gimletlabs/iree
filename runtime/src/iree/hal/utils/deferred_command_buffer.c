@@ -799,10 +799,12 @@ static const iree_hal_cmd_apply_fn_t iree_hal_cmd_apply_table[] = {
         iree_hal_deferred_command_buffer_apply_dispatch,
 };
 
-IREE_API_EXPORT iree_status_t iree_hal_deferred_command_buffer_apply(
-    iree_hal_command_buffer_t* base_command_buffer,
-    iree_hal_command_buffer_t* target_command_buffer,
-    iree_hal_buffer_binding_table_t binding_table) {
+// apply_* helpers use concrete command structs; the table erases to
+// iree_hal_cmd_apply_fn_t.
+IREE_ATTRIBUTE_NO_UBSAN_FUNCTION IREE_API_EXPORT iree_status_t
+iree_hal_deferred_command_buffer_apply(iree_hal_command_buffer_t* base_command_buffer,
+                                       iree_hal_command_buffer_t* target_command_buffer,
+                                       iree_hal_buffer_binding_table_t binding_table) {
   IREE_TRACE_ZONE_BEGIN(z0);
 
   iree_hal_deferred_command_buffer_t* command_buffer =
