@@ -121,7 +121,8 @@ static iree_status_t iree_hal_task_driver_query_available_devices(
     iree_hal_device_info_t** out_device_infos) {
   static const iree_hal_device_info_t device_infos[1] = {{
       .device_id = IREE_HAL_TASK_DEVICE_ID_DEFAULT,
-      /* Empty path; MSVC/MSan need explicit zeros (not only implicit aggregate init). */
+      /* Empty path; MSVC/MSan need explicit zeros (not only implicit aggregate
+         init). */
       .path = {NULL, 0},
       .name = iree_string_view_literal("default"),
   }};

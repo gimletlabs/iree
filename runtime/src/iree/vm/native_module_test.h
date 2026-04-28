@@ -46,12 +46,11 @@ typedef iree_status_t (*call_i32_i32_t)(iree_vm_stack_t* stack,
 // This approach is most useful when the function may also be exported/used by
 // non-VM code or may be internally referenced using a target-specific ABI.
 // TODO(benvanik): generate/export these shims/call functions in stack.h.
-static iree_status_t call_shim_i32_i32(iree_vm_stack_t* stack,
-                                       iree_vm_native_function_flags_t flags,
-                                       iree_byte_span_t args_storage,
-                                       iree_byte_span_t rets_storage,
-                                       iree_vm_native_function_target2_t target_fn,
-                                       void* module, void* module_state) {
+static iree_status_t call_shim_i32_i32(
+    iree_vm_stack_t* stack, iree_vm_native_function_flags_t flags,
+    iree_byte_span_t args_storage, iree_byte_span_t rets_storage,
+    iree_vm_native_function_target2_t target_fn, void* module,
+    void* module_state) {
   // We can use structs to allow compiler-controlled indexing optimizations,
   // though this won't work for variadic cases.
   // TODO(benvanik): packed attributes.

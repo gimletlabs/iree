@@ -251,9 +251,11 @@ enum {
 //===----------------------------------------------------------------------===//
 
 #if defined(__clang__) && IREE_HAVE_ATTRIBUTE(no_sanitize)
-#define IREE_ATTRIBUTE_NO_UBSAN_FUNCTION __attribute__((no_sanitize("function")))
+#define IREE_ATTRIBUTE_NO_UBSAN_FUNCTION \
+  __attribute__((no_sanitize("function")))
 #elif defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 5
-#define IREE_ATTRIBUTE_NO_UBSAN_FUNCTION __attribute__((no_sanitize("function")))
+#define IREE_ATTRIBUTE_NO_UBSAN_FUNCTION \
+  __attribute__((no_sanitize("function")))
 #else
 #define IREE_ATTRIBUTE_NO_UBSAN_FUNCTION
 #endif
