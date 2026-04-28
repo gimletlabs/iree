@@ -20,9 +20,9 @@ static iree_status_t iree_allocator_issue_alloc(
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "allocator has no control routine");
   }
-  iree_allocator_alloc_params_t params = {
-      .byte_length = byte_length,
-  };
+  // Zero the full struct so MSan does not flag padding passed to allocator ctl.
+  iree_allocator_alloc_params_t params = {0};
+  params.byte_length = byte_length;
   return allocator.ctl(allocator.self, command, &params, inout_ptr);
 }
 
