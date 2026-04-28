@@ -10,6 +10,7 @@
 #include "iree/base/api.h"
 #include "iree/testing/benchmark.h"
 #include "iree/vm/api.h"
+#include "iree/vm/native_module.h"
 #include "iree/vm/bytecode/module.h"
 #include "iree/vm/bytecode/module_benchmark_module_c.h"
 
@@ -24,8 +25,13 @@ typedef struct native_import_module_state_t native_import_module_state_t;
 static iree_status_t native_import_module_add_1(
     iree_vm_stack_t* stack, iree_vm_native_function_flags_t flags,
     iree_byte_span_t args_storage, iree_byte_span_t rets_storage,
-    iree_vm_native_function_target_t target_fn, void* module,
+    iree_vm_native_function_target2_t target_fn, void* module,
     void* module_state) {
+  (void)target_fn;
+  (void)flags;
+  (void)stack;
+  (void)module;
+  (void)module_state;
   // Add 1 to arg0 and return.
   int32_t arg0 = *reinterpret_cast<int32_t*>(args_storage.data);
   int32_t ret0 = arg0 + 1;
