@@ -51,6 +51,7 @@ iree_compiler_cc_library(
 iree_compiler_cc_library(
     name = "MetalTargetPlatform",
     hdrs = ["MetalTargetPlatform.h"],
+    include_prefix = "iree/compiler/plugins/target/MetalSPIRV",
 )
 
 iree_compiler_cc_library(
@@ -59,6 +60,7 @@ iree_compiler_cc_library(
         "SPIRVToMSL.cpp",
     ],
     hdrs = ["SPIRVToMSL.h"],
+    include_prefix = "iree/compiler/plugins/target/MetalSPIRV",
     deps = [
         ":MetalTargetPlatform",
         "@llvm-project//llvm:Support",
@@ -73,6 +75,7 @@ iree_compiler_cc_library(
         "MSLToMetalLib.cpp",
     ],
     hdrs = ["MSLToMetalLib.h"],
+    include_prefix = "iree/compiler/plugins/target/MetalSPIRV",
     deps = [
         ":MetalTargetPlatform",
         "@llvm-project//llvm:Support",

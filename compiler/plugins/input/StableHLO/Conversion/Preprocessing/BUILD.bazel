@@ -34,6 +34,7 @@ iree_compiler_cc_library(
         "Passes.h.inc",
         "Rewriters.h",
     ],
+    include_prefix = "iree/compiler/plugins/input/StableHLO/Conversion/Preprocessing",
     deps = [
         ":PassesIncGen",
         "@llvm-project//mlir:Pass",
@@ -75,6 +76,7 @@ iree_compiler_cc_library(
         "Passes.h",
         "Rewriters.h",
     ],
+    include_prefix = "iree/compiler/plugins/input/StableHLO/Conversion/Preprocessing",
     deps = [
         ":ComplexLoweringPatterns",
         ":PassHeaders",

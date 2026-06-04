@@ -33,6 +33,7 @@ iree_compiler_cc_library(
         "Passes.h",
         "Passes.h.inc",
     ],
+    include_prefix = "iree/compiler/plugins/input/TOSA/InputConversion",
     deps = [
         ":PassesIncGen",
         "//compiler/src/iree/compiler/Dialect/LinalgExt/IR",
@@ -59,6 +60,7 @@ iree_compiler_cc_library(
     hdrs = [
         "Passes.h",
     ],
+    include_prefix = "iree/compiler/plugins/input/TOSA/InputConversion",
     deps = [
         ":PassHeaders",
         ":PassesIncGen",

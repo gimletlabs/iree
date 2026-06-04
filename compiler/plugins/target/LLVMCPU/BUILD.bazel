@@ -26,6 +26,7 @@ iree_compiler_cc_library(
     hdrs = [
         "LibraryBuilder.h",
     ],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = [
         ":LLVMIRPasses",
         ":LLVMTargetOptions",
@@ -90,6 +91,7 @@ iree_compiler_cc_library(
     hdrs = [
         "LLVMIRPasses.h",
     ],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = [
         ":LLVMTargetOptions",
         "@llvm-project//llvm:Analysis",
@@ -112,6 +114,7 @@ iree_compiler_cc_library(
     hdrs = [
         "ResolveCPUAndCPUFeatures.h",
     ],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = [
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:Target",
@@ -127,6 +130,7 @@ iree_compiler_cc_library(
     hdrs = [
         "LLVMTargetOptions.h",
     ],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = [
         ":ResolveCPUAndCPUFeatures",
         "//compiler/src/iree/compiler/Codegen/LLVMCPU",
@@ -147,6 +151,7 @@ iree_compiler_cc_library(
     name = "LinkerTool",
     srcs = ["LinkerTool.cpp"],
     hdrs = ["LinkerTool.h"],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = platform_trampoline_deps("LinkerTools", "compiler/plugins/target/LLVMCPU") + [
         ":LLVMTargetOptions",
         "//compiler/src/iree/compiler/Utils",
@@ -160,6 +165,7 @@ iree_compiler_cc_library(
 iree_compiler_cc_library(
     name = "LinkerTool_hdrs",
     hdrs = ["LinkerTool.h"],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = [
         ":LLVMTargetOptions",
         "@llvm-project//llvm:Core",
@@ -177,6 +183,7 @@ iree_compiler_cc_library(
     hdrs = [
         "StaticLibraryGenerator.h",
     ],
+    include_prefix = "iree/compiler/plugins/target/LLVMCPU",
     deps = [
         "@llvm-project//llvm:Support",
     ],

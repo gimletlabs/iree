@@ -26,6 +26,7 @@ iree_compiler_cc_library(
     hdrs = [
         "ROCMTargetUtils.h",
     ],
+    include_prefix = "iree/compiler/plugins/target/ROCM",
     deps = [
         "//compiler/plugins/target/ROCM/Dialect/ROCM/IR:ROCMDialect",
         "//compiler/plugins/target/ROCM/Dialect/ROCM/Transforms",
