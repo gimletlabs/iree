@@ -290,7 +290,7 @@ static iree_status_t iree_hal_hip_get_nccl_data_type(
       *out = ncclFloat64;
       break;
     case IREE_HAL_COLLECTIVE_ELEMENT_TYPE_BFLOAT_16:
-      *out = ncclFloat64;
+      *out = ncclBfloat16;
       break;
     default:
       return iree_make_status(IREE_STATUS_UNIMPLEMENTED,
