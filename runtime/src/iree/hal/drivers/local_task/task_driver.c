@@ -119,12 +119,13 @@ static iree_status_t iree_hal_task_driver_query_available_devices(
     iree_hal_driver_t* base_driver, iree_allocator_t host_allocator,
     iree_host_size_t* out_device_info_count,
     iree_hal_device_info_t** out_device_infos) {
-  static const iree_hal_device_info_t device_infos[1] = {
-      {
-          .device_id = IREE_HAL_TASK_DEVICE_ID_DEFAULT,
-          .name = iree_string_view_literal("default"),
-      },
-  };
+  static const iree_hal_device_info_t device_infos[1] = {{
+      .device_id = IREE_HAL_TASK_DEVICE_ID_DEFAULT,
+      /* Empty path; MSVC/MSan need explicit zeros (not only implicit aggregate
+         init). */
+      .path = {NULL, 0},
+      .name = iree_string_view_literal("default"),
+  }};
   *out_device_info_count = IREE_ARRAYSIZE(device_infos);
   return iree_allocator_clone(
       host_allocator,
