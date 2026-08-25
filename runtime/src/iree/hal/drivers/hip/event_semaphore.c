@@ -130,6 +130,35 @@ static iree_hal_hip_semaphore_t* iree_hal_hip_semaphore_cast(
   return (iree_hal_hip_semaphore_t*)base_value;
 }
 
+static bool iree_hal_hip_semaphore_external_stream_capture_active(
+    iree_hal_hip_semaphore_t* semaphore) {
+  return semaphore->devices.count == 1 &&
+         semaphore->devices.external_stream_capture_active != NULL &&
+         iree_atomic_load(semaphore->devices.external_stream_capture_active,
+                          iree_memory_order_acquire) != 0;
+}
+
+static iree_status_t iree_hal_hip_semaphore_advance_capture_visible_locked(
+    iree_hal_hip_semaphore_t* semaphore, uint64_t value) {
+  iree_status_t status = iree_status_clone(semaphore->failure_status);
+  if (!iree_status_is_ok(status)) return status;
+  if (value > semaphore->max_value_to_be_signaled) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "cannot host-wait for unscheduled semaphore value during external "
+        "stream capture; requested=%" PRIu64 ", scheduled=%" PRIu64,
+        value, semaphore->max_value_to_be_signaled);
+  }
+  if (value > semaphore->current_visible_value) {
+    semaphore->current_visible_value = value;
+    iree_notification_post(&semaphore->state_notification, IREE_ALL_WAITERS);
+  }
+  if (semaphore->current_visible_value >= IREE_HAL_SEMAPHORE_FAILURE_VALUE) {
+    status = iree_make_status(IREE_STATUS_ABORTED, "the semaphore was aborted");
+  }
+  return status;
+}
+
 iree_status_t iree_hal_hip_event_semaphore_create(
     uint64_t initial_value, const iree_hal_hip_dynamic_symbols_t* symbols,
     iree_allocator_t host_allocator, iree_hal_hip_device_topology_t topology,
@@ -795,6 +824,22 @@ static iree_status_t iree_hal_hip_semaphore_query(
   iree_hal_hip_semaphore_t* semaphore =
       iree_hal_hip_semaphore_cast(base_semaphore);
 
+  if (iree_hal_hip_semaphore_external_stream_capture_active(semaphore)) {
+    iree_slim_mutex_lock(&semaphore->mutex);
+    iree_status_t status =
+        iree_hal_hip_semaphore_advance_capture_visible_locked(
+            semaphore, semaphore->max_value_to_be_signaled);
+    *out_value = semaphore->current_visible_value;
+    iree_slim_mutex_unlock(&semaphore->mutex);
+    if (iree_status_is_aborted(status)) {
+      iree_status_ignore(status);
+      status = iree_ok_status();
+    }
+    return iree_status_join(
+        status,
+        iree_hal_hip_event_semaphore_run_scheduled_callbacks(base_semaphore));
+  }
+
   iree_slim_mutex_lock(&semaphore->mutex);
   *out_value = semaphore->current_visible_value;
 
@@ -947,6 +992,24 @@ static iree_status_t iree_hal_hip_semaphore_wait(
   iree_hal_hip_semaphore_t* semaphore =
       iree_hal_hip_semaphore_cast(base_semaphore);
   IREE_TRACE_ZONE_BEGIN(z0);
+
+  if (iree_hal_hip_semaphore_external_stream_capture_active(semaphore)) {
+    iree_slim_mutex_lock(&semaphore->mutex);
+    iree_status_t status =
+        iree_hal_hip_semaphore_advance_capture_visible_locked(semaphore, value);
+    iree_slim_mutex_unlock(&semaphore->mutex);
+    if (iree_status_is_ok(status) || iree_status_is_aborted(status)) {
+      iree_status_t callback_status =
+          iree_hal_hip_event_semaphore_run_scheduled_callbacks(base_semaphore);
+      if (iree_status_is_aborted(status)) {
+        iree_status_ignore(status);
+        status = iree_ok_status();
+      }
+      status = iree_status_join(status, callback_status);
+    }
+    IREE_TRACE_ZONE_END(z0);
+    return status;
+  }
 
   const iree_time_t deadline_ns = iree_timeout_as_deadline_ns(timeout);
   iree_slim_mutex_lock(&semaphore->mutex);

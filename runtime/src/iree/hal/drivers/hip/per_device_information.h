@@ -7,6 +7,7 @@
 #ifndef IREE_HAL_DRIVERS_HIP_PER_DEVICE_INFORMATION_H_
 #define IREE_HAL_DRIVERS_HIP_PER_DEVICE_INFORMATION_H_
 
+#include "iree/base/internal/atomics.h"
 #include "iree/base/threading/mutex.h"
 #include "iree/base/threading/notification.h"
 #include "iree/hal/drivers/hip/dispatch_thread.h"
@@ -43,6 +44,11 @@ typedef struct iree_hal_hip_per_device_info_t {
 typedef struct iree_hal_hip_device_topology_t {
   iree_host_size_t count;
   iree_hal_hip_per_device_info_t* devices;
+
+  // Non-zero while the embedding runtime is explicitly recording the external
+  // dispatch stream. Semaphores use this to avoid querying events that cannot
+  // complete until the captured graph is launched.
+  iree_atomic_int32_t* external_stream_capture_active;
 } iree_hal_hip_device_topology_t;
 
 #endif  // IREE_HAL_DRIVERS_HIP_PER_DEVICE_INFORMATION_H_

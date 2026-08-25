@@ -118,6 +118,51 @@ typedef struct iree_hal_hip_device_params_t {
 IREE_API_EXPORT void iree_hal_hip_device_params_initialize(
     iree_hal_hip_device_params_t* out_params);
 
+// Opaque ownership token for work submitted while an embedding runtime records
+// an IREE HIP device's external stream into a reusable graph.
+//
+// The token retains all asynchronous HIP HAL cleanup associated with the
+// captured submissions, including transient allocations and command-buffer
+// resources. The embedding runtime must keep the token live for as long as any
+// executable graph containing those submissions may be launched.
+typedef struct iree_hal_hip_external_stream_capture_t
+    iree_hal_hip_external_stream_capture_t;
+
+// Begins an external-stream capture scope and returns its ownership token.
+//
+// The device must be a single-device HIP device configured with an external
+// stream. The caller must ensure that no other queue submissions or capture
+// scopes race with this scope. After this returns, the caller may begin native
+// HIP stream capture and invoke IREE with empty external wait/signal fences.
+// Internal transient-allocation fences are made host-visible as they are
+// submitted so that the VM can finish recording the invocation.
+//
+// The returned token must be ended with
+// iree_hal_hip_device_end_external_stream_capture and eventually released with
+// iree_hal_hip_external_stream_capture_release.
+IREE_API_EXPORT iree_status_t iree_hal_hip_device_begin_external_stream_capture(
+    iree_hal_device_t* base_device,
+    iree_hal_hip_external_stream_capture_t** out_capture);
+
+// Ends |capture| after the caller has ended native HIP stream capture.
+//
+// This stops capture-specific behavior but does not release retained IREE
+// resources. The caller may instantiate and launch the native graph after this
+// returns.
+IREE_API_EXPORT iree_status_t iree_hal_hip_device_end_external_stream_capture(
+    iree_hal_device_t* base_device,
+    iree_hal_hip_external_stream_capture_t* capture);
+
+// Releases |capture| and all IREE resources retained by it.
+//
+// The caller must first end the capture scope and ensure that all native graphs
+// containing the captured submissions have been destroyed and all of their
+// launches have completed. The capture token retains the IREE device, so it is
+// valid to release the application's device reference before releasing the
+// token.
+IREE_API_EXPORT iree_status_t iree_hal_hip_external_stream_capture_release(
+    iree_hal_hip_external_stream_capture_t* capture);
+
 //===----------------------------------------------------------------------===//
 // iree_hal_hip_driver_t
 //===----------------------------------------------------------------------===//
