@@ -50,6 +50,20 @@ typedef enum iree_hip_device_commandbuffer_type_t {
   IREE_HAL_HIP_DEVICE_COMMAND_BUFFER_TYPE_GRAPH,
 } iree_hip_device_commandbuffer_type_t;
 
+typedef struct iree_hal_hip_external_stream_capture_cleanup_t {
+  iree_hal_hip_cleanup_callback_t callback;
+  void* user_data;
+} iree_hal_hip_external_stream_capture_cleanup_t;
+
+typedef struct iree_hal_hip_external_stream_capture_state_t {
+  iree_allocator_t host_allocator;
+  iree_hal_hip_external_stream_capture_buffer_callback_t buffer_callback;
+  void* buffer_callback_context;
+  iree_host_size_t cleanup_count;
+  iree_host_size_t cleanup_capacity;
+  iree_hal_hip_external_stream_capture_cleanup_t* cleanups;
+} iree_hal_hip_external_stream_capture_state_t;
+
 typedef struct iree_hal_hip_device_t {
   // Abstract resource used for injecting reference counting and vtable;
   // must be at offset 0.
@@ -92,6 +106,13 @@ typedef struct iree_hal_hip_device_t {
   iree_hal_hip_cleanup_thread_t* cleanup_thread;
 
   iree_hal_hip_cleanup_thread_t* buffer_free_thread;
+
+  // Guards the one external-stream capture allowed on this device. External
+  // stream capture requires exclusive queue submission by contract.
+  iree_slim_mutex_t external_stream_capture_mutex;
+  iree_hal_hip_external_stream_capture_state_t* active_external_stream_capture
+      IREE_GUARDED_BY(external_stream_capture_mutex);
+  iree_atomic_int32_t external_stream_capture_active;
 
   iree_host_size_t device_count;
 
@@ -306,6 +327,10 @@ static iree_status_t iree_hal_hip_device_initialize_internal(
   device->params = *params;
 
   device->host_allocator = host_allocator;
+  iree_slim_mutex_initialize(&device->external_stream_capture_mutex);
+  device->active_external_stream_capture = NULL;
+  iree_atomic_store(&device->external_stream_capture_active, 0,
+                    iree_memory_order_relaxed);
   iree_status_t status = iree_ok_status();
   // Enable tracing for each of the streams - no-op if disabled.
   if (device->params.stream_tracing) {
@@ -571,12 +596,137 @@ const iree_hal_hip_dynamic_symbols_t* iree_hal_hip_device_dynamic_symbols(
   return device->hip_symbols;
 }
 
+static iree_status_t iree_hal_hip_external_stream_capture_append_cleanup(
+    iree_hal_hip_device_t* device, iree_hal_hip_cleanup_callback_t callback,
+    void* user_data, bool* out_retained) {
+  *out_retained = false;
+  if (iree_atomic_load(&device->external_stream_capture_active,
+                       iree_memory_order_acquire) == 0) {
+    return iree_ok_status();
+  }
+  iree_slim_mutex_lock(&device->external_stream_capture_mutex);
+  iree_hal_hip_external_stream_capture_state_t* capture =
+      device->active_external_stream_capture;
+  iree_status_t status = iree_ok_status();
+  if (capture != NULL) {
+    if (capture->cleanup_count == capture->cleanup_capacity) {
+      const iree_host_size_t new_capacity =
+          iree_max(16, capture->cleanup_capacity * 2);
+      status = iree_allocator_realloc(capture->host_allocator,
+                                      new_capacity * sizeof(*capture->cleanups),
+                                      (void**)&capture->cleanups);
+      if (iree_status_is_ok(status)) {
+        capture->cleanup_capacity = new_capacity;
+      }
+    }
+    if (iree_status_is_ok(status)) {
+      capture->cleanups[capture->cleanup_count++] =
+          (iree_hal_hip_external_stream_capture_cleanup_t){
+              .callback = callback,
+              .user_data = user_data,
+          };
+      *out_retained = true;
+    }
+  }
+  iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+  return status;
+}
+
+IREE_API_EXPORT iree_status_t
+iree_hal_hip_device_set_external_stream_capture_mode(
+    iree_hal_device_t* base_device, bool enabled,
+    iree_hal_hip_external_stream_capture_buffer_callback_t buffer_callback,
+    void* buffer_callback_context) {
+  IREE_ASSERT_ARGUMENT(base_device);
+  iree_hal_hip_device_t* device = iree_hal_hip_device_cast(base_device);
+  if (!device->uses_external_stream || device->device_count != 1) {
+    return iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "external stream capture requires a single-device HIP device "
+        "configured with an external stream");
+  }
+
+  if (enabled) {
+    if (buffer_callback == NULL) {
+      return iree_make_status(
+          IREE_STATUS_INVALID_ARGUMENT,
+          "external stream capture requires a buffer callback");
+    }
+    iree_hal_hip_external_stream_capture_state_t* capture = NULL;
+    IREE_RETURN_IF_ERROR(iree_allocator_malloc(
+        device->host_allocator, sizeof(*capture), (void**)&capture));
+    *capture = (iree_hal_hip_external_stream_capture_state_t){
+        .host_allocator = device->host_allocator,
+        .buffer_callback = buffer_callback,
+        .buffer_callback_context = buffer_callback_context,
+    };
+
+    iree_slim_mutex_lock(&device->external_stream_capture_mutex);
+    if (device->active_external_stream_capture != NULL) {
+      iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+      iree_allocator_free(device->host_allocator, capture);
+      return iree_make_status(
+          IREE_STATUS_FAILED_PRECONDITION,
+          "external stream capture mode is already enabled");
+    }
+    device->active_external_stream_capture = capture;
+    iree_atomic_store(&device->external_stream_capture_active, 1,
+                      iree_memory_order_release);
+    iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+    return iree_ok_status();
+  }
+
+  iree_slim_mutex_lock(&device->external_stream_capture_mutex);
+  iree_hal_hip_external_stream_capture_state_t* capture =
+      device->active_external_stream_capture;
+  if (capture == NULL) {
+    iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+    return iree_make_status(IREE_STATUS_FAILED_PRECONDITION,
+                            "external stream capture mode is not enabled");
+  }
+  iree_atomic_store(&device->external_stream_capture_active, 0,
+                    iree_memory_order_release);
+  device->active_external_stream_capture = NULL;
+  iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+
+  iree_status_t status = iree_ok_status();
+  for (iree_host_size_t i = 0; i < capture->cleanup_count; ++i) {
+    iree_hal_hip_external_stream_capture_cleanup_t* cleanup =
+        &capture->cleanups[i];
+    status = iree_status_join(
+        status, cleanup->callback(cleanup->user_data, /*event=*/NULL,
+                                  iree_ok_status()));
+  }
+  iree_allocator_free(capture->host_allocator, capture->cleanups);
+  iree_allocator_free(capture->host_allocator, capture);
+  return status;
+}
+
+static iree_status_t iree_hal_hip_external_stream_capture_retain_buffer(
+    iree_hal_hip_device_t* device, iree_hal_buffer_t* buffer) {
+  if (iree_atomic_load(&device->external_stream_capture_active,
+                       iree_memory_order_acquire) == 0) {
+    return iree_ok_status();
+  }
+  iree_slim_mutex_lock(&device->external_stream_capture_mutex);
+  iree_hal_hip_external_stream_capture_state_t* capture =
+      device->active_external_stream_capture;
+  iree_status_t status = iree_ok_status();
+  if (capture != NULL) {
+    status = capture->buffer_callback(capture->buffer_callback_context, buffer);
+  }
+  iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+  return status;
+}
+
 static void iree_hal_hip_device_destroy(iree_hal_device_t* base_device) {
   iree_hal_hip_device_t* device = iree_hal_hip_device_cast(base_device);
   iree_allocator_t host_allocator = iree_hal_device_host_allocator(base_device);
   IREE_TRACE_ZONE_BEGIN(z0);
 
   const iree_hal_hip_dynamic_symbols_t* symbols = device->hip_symbols;
+
+  IREE_ASSERT(device->active_external_stream_capture == NULL);
 
   for (iree_host_size_t i = 0; i < device->device_count; ++i) {
     iree_hal_hip_dispatch_thread_deinitialize(
@@ -631,6 +781,7 @@ static void iree_hal_hip_device_destroy(iree_hal_device_t* base_device) {
   }
 
   iree_arena_block_pool_deinitialize(&device->block_pool);
+  iree_slim_mutex_deinitialize(&device->external_stream_capture_mutex);
 
   // Finally, destroy the device.
   iree_hal_driver_release(device->driver);
@@ -1277,8 +1428,16 @@ static iree_status_t iree_hal_hip_device_stream_add_cleanup(
     iree_hal_hip_device_t* device, iree_hal_hip_cleanup_thread_t* thread,
     iree_host_size_t device_ordinal, iree_hal_hip_cleanup_callback_t callback,
     void* user_data) {
+  // Events recorded during stream capture do not complete until graph replay
+  // and cannot be queried by the ordinary cleanup thread. Retain only the host
+  // cleanup callback until the embedding runtime has ended native capture.
+  bool retained = false;
+  iree_status_t status = iree_hal_hip_external_stream_capture_append_cleanup(
+      device, callback, user_data, &retained);
+  if (!iree_status_is_ok(status) || retained) return status;
+
   iree_hal_hip_event_t* event = NULL;
-  iree_status_t status = iree_hal_hip_event_pool_acquire(
+  status = iree_hal_hip_event_pool_acquire(
       device->devices[device_ordinal].device_event_pool, 1, &event);
 
   if (iree_status_is_ok(status)) {
@@ -1321,22 +1480,31 @@ iree_hal_hip_device_stream_signal_semaphores_and_add_cleanup(
   IREE_TRACE_ZONE_BEGIN(z0);
 
   iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0; i < signal_semaphore_list.count; ++i) {
-    status = iree_hal_hip_semaphore_create_event_and_record_if_necessary(
-        signal_semaphore_list.semaphores[i],
-        signal_semaphore_list.payload_values[i],
-        &device->devices[device_ordinal], stream,
-        device->devices[device_ordinal].device_event_pool);
-    if (!iree_status_is_ok(status)) {
-      break;
+  if (iree_atomic_load(&device->external_stream_capture_active,
+                       iree_memory_order_acquire) != 0) {
+    // The marked invocation has no external fences and all of its internal
+    // dependencies are recorded on the same external stream. Make those
+    // internal fence values visible on the host without placing HIP event
+    // nodes in the graph.
+    status = iree_hal_semaphore_list_signal(signal_semaphore_list);
+  } else {
+    for (iree_host_size_t i = 0; i < signal_semaphore_list.count; ++i) {
+      status = iree_hal_hip_semaphore_create_event_and_record_if_necessary(
+          signal_semaphore_list.semaphores[i],
+          signal_semaphore_list.payload_values[i],
+          &device->devices[device_ordinal], stream,
+          device->devices[device_ordinal].device_event_pool);
+      if (!iree_status_is_ok(status)) {
+        break;
+      }
     }
-  }
 
-  for (iree_host_size_t i = 0;
-       i < signal_semaphore_list.count && iree_status_is_ok(status); ++i) {
-    status = iree_hal_hip_semaphore_notify_forward_progress_to(
-        signal_semaphore_list.semaphores[i],
-        signal_semaphore_list.payload_values[i]);
+    for (iree_host_size_t i = 0;
+         i < signal_semaphore_list.count && iree_status_is_ok(status); ++i) {
+      status = iree_hal_hip_semaphore_notify_forward_progress_to(
+          signal_semaphore_list.semaphores[i],
+          signal_semaphore_list.payload_values[i]);
+    }
   }
 
   if (iree_status_is_ok(status)) {
@@ -1746,6 +1914,11 @@ static iree_status_t iree_hal_hip_device_queue_alloca(
       iree_hal_resource_release(external_stream_data);
     }
 
+    if (iree_status_is_ok(status)) {
+      status =
+          iree_hal_hip_external_stream_capture_retain_buffer(device, buffer);
+    }
+
     IREE_TRACE_ZONE_END(z0);
     return status;
   }
@@ -1768,6 +1941,10 @@ static iree_status_t iree_hal_hip_device_queue_alloca(
   if (iree_status_is_ok(status)) {
     status = iree_hal_semaphore_list_signal(signal_semaphore_list);
   }
+  if (iree_status_is_ok(status)) {
+    status =
+        iree_hal_hip_external_stream_capture_retain_buffer(device, *out_buffer);
+  }
   IREE_TRACE_ZONE_END(z0);
   return status;
 }
@@ -1784,6 +1961,19 @@ static iree_status_t iree_hal_hip_device_queue_dealloca(
   IREE_TRACE_ZONE_BEGIN(z0);
 
   iree_hal_hip_device_t* device = iree_hal_hip_device_cast(base_device);
+
+  if (iree_atomic_load(&device->external_stream_capture_active,
+                       iree_memory_order_acquire) != 0) {
+    // The embedding runtime retained this allocation through the capture
+    // callback. Keep its address stable and forward the deallocation timeline;
+    // releasing the retained HAL buffer after graph destruction performs the
+    // ordinary allocator cleanup.
+    iree_status_t status =
+        iree_hal_semaphore_list_signal(signal_semaphore_list);
+    IREE_TRACE_ZONE_END(z0);
+    return status;
+  }
+
   uint64_t queue_affinity_mask =
       ((iree_hal_queue_affinity_t)1 << device->device_count);
   queue_affinity_mask = queue_affinity_mask | (queue_affinity_mask - 1);
@@ -2392,7 +2582,7 @@ static iree_status_t iree_hal_hip_device_complete_submission(
 
   // Read any tracing events that were submitted.
 
-  if (iree_status_is_ok(status)) {
+  if (event != NULL && iree_status_is_ok(status)) {
     iree_hal_command_buffer_t* command_buffer = data->command_buffer;
     if (iree_hal_hip_multi_queue_command_buffer_isa(command_buffer)) {
       status = iree_hal_hip_multi_queue_command_buffer_get(

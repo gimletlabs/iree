@@ -118,6 +118,39 @@ typedef struct iree_hal_hip_device_params_t {
 IREE_API_EXPORT void iree_hal_hip_device_params_initialize(
     iree_hal_hip_device_params_t* out_params);
 
+// Called for each queue allocation made while external-stream capture mode is
+// enabled. |buffer_callback_context| is the opaque buffer sink supplied when
+// capture mode was enabled. |buffer| is borrowed; the callback must retain it
+// if the embedding runtime needs it after the callback returns. The callback
+// runs synchronously and must not reenter this device or submit work.
+typedef iree_status_t(
+    IREE_API_PTR* iree_hal_hip_external_stream_capture_buffer_callback_t)(
+    void* buffer_callback_context, iree_hal_buffer_t* buffer);
+
+// Enables or disables submission of one IREE invocation while an embedding
+// runtime captures the HIP device's external stream.
+//
+// On enable, |buffer_callback| is required. IREE reports invocation-local queue
+// allocations to the callback and passes |buffer_callback_context| through
+// unchanged (it may be NULL). IREE omits matching queue deallocations.
+// The embedding runtime owns any retained buffers and must release them only
+// after all executable graphs containing their addresses have been destroyed
+// and their launches have completed.
+//
+// While enabled, callers must invoke IREE with empty external wait/signal
+// fences and must not submit unrelated work to the device. IREE forwards
+// internal semaphore values on the host and defers ordinary submission cleanup
+// so that only device work is recorded in the native graph. Enable after
+// beginning native HIP stream capture and disable after ending it. Disabling
+// performs deferred host cleanup synchronously. Capture mode is exclusive per
+// device and nested enable/disable calls are rejected. On disable,
+// |buffer_callback| and |buffer_callback_context| are ignored.
+IREE_API_EXPORT iree_status_t
+iree_hal_hip_device_set_external_stream_capture_mode(
+    iree_hal_device_t* base_device, bool enabled,
+    iree_hal_hip_external_stream_capture_buffer_callback_t buffer_callback,
+    void* buffer_callback_context);
+
 //===----------------------------------------------------------------------===//
 // iree_hal_hip_driver_t
 //===----------------------------------------------------------------------===//
