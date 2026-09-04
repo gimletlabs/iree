@@ -141,10 +141,15 @@ typedef iree_status_t(
 // fences and must not submit unrelated work to the device. IREE forwards
 // internal semaphore values on the host and defers ordinary submission cleanup
 // so that only device work is recorded in the native graph. Enable after
-// beginning native HIP stream capture and disable after ending it. Disabling
-// performs deferred host cleanup synchronously. Capture mode is exclusive per
-// device and nested enable/disable calls are rejected. On disable,
-// |buffer_callback| and |buffer_callback_context| are ignored.
+// beginning native HIP stream capture and disable after ending it. Disable must
+// be called after every successful enable, even if ending native capture fails.
+// Disabling performs deferred capture-time host bookkeeping synchronously; the
+// callbacks receive an OK status because native graph instantiation, replay,
+// and replay error handling remain the embedding runtime's responsibility.
+// IREE stream tracing must be inactive because its HIP events cannot be
+// collected when graph replay is owned by the embedding runtime. Capture mode
+// is exclusive per device and nested enable/disable calls are rejected. On
+// disable, |buffer_callback| and |buffer_callback_context| are ignored.
 IREE_API_EXPORT iree_status_t
 iree_hal_hip_device_set_external_stream_capture_mode(
     iree_hal_device_t* base_device, bool enabled,

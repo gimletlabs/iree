@@ -608,16 +608,19 @@ static iree_status_t iree_hal_hip_external_stream_capture_append_cleanup(
   iree_hal_hip_external_stream_capture_state_t* capture =
       device->active_external_stream_capture;
   iree_status_t status = iree_ok_status();
-  if (capture != NULL) {
+  if (capture == NULL) {
+    // The caller observed capture mode before disable detached its state. The
+    // API requires exclusive submission, but fail instead of silently adding a
+    // normal HIP event for work that the caller expected to capture.
+    status = iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "external stream capture mode changed during submission");
+  } else {
     if (capture->cleanup_count == capture->cleanup_capacity) {
-      const iree_host_size_t new_capacity =
-          iree_max(16, capture->cleanup_capacity * 2);
-      status = iree_allocator_realloc(capture->host_allocator,
-                                      new_capacity * sizeof(*capture->cleanups),
-                                      (void**)&capture->cleanups);
-      if (iree_status_is_ok(status)) {
-        capture->cleanup_capacity = new_capacity;
-      }
+      status = iree_allocator_grow_array(
+          capture->host_allocator, /*minimum_capacity=*/16,
+          sizeof(*capture->cleanups), &capture->cleanup_capacity,
+          (void**)&capture->cleanups);
     }
     if (iree_status_is_ok(status)) {
       capture->cleanups[capture->cleanup_count++] =
@@ -630,6 +633,25 @@ static iree_status_t iree_hal_hip_external_stream_capture_append_cleanup(
   }
   iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
   return status;
+}
+
+// Drains capture-time host bookkeeping and releases |capture|. |status| is
+// cloned for each callback and consumed by this function.
+static iree_status_t iree_hal_hip_external_stream_capture_drain(
+    iree_hal_hip_external_stream_capture_state_t* capture,
+    iree_status_t status) {
+  iree_status_t cleanup_status = iree_status_clone(status);
+  for (iree_host_size_t i = 0; i < capture->cleanup_count; ++i) {
+    iree_hal_hip_external_stream_capture_cleanup_t* cleanup =
+        &capture->cleanups[i];
+    cleanup_status = iree_status_join(
+        cleanup_status, cleanup->callback(cleanup->user_data, /*event=*/NULL,
+                                          iree_status_clone(status)));
+  }
+  iree_status_ignore(status);
+  iree_allocator_free(capture->host_allocator, capture->cleanups);
+  iree_allocator_free(capture->host_allocator, capture);
+  return cleanup_status;
 }
 
 IREE_API_EXPORT iree_status_t
@@ -651,6 +673,15 @@ iree_hal_hip_device_set_external_stream_capture_mode(
       return iree_make_status(
           IREE_STATUS_INVALID_ARGUMENT,
           "external stream capture requires a buffer callback");
+    }
+    // IREE stream tracing records HIP events and collects them when IREE sees
+    // submission completion. An externally owned graph may be replayed many
+    // times without reentering IREE, so those events cannot be collected or
+    // recycled safely. External profilers can still observe graph replays.
+    if (device->devices[0].tracing_context != NULL) {
+      return iree_make_status(
+          IREE_STATUS_FAILED_PRECONDITION,
+          "external stream capture does not support IREE stream tracing");
     }
     iree_hal_hip_external_stream_capture_state_t* capture = NULL;
     IREE_RETURN_IF_ERROR(iree_allocator_malloc(
@@ -689,17 +720,11 @@ iree_hal_hip_device_set_external_stream_capture_mode(
   device->active_external_stream_capture = NULL;
   iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
 
-  iree_status_t status = iree_ok_status();
-  for (iree_host_size_t i = 0; i < capture->cleanup_count; ++i) {
-    iree_hal_hip_external_stream_capture_cleanup_t* cleanup =
-        &capture->cleanups[i];
-    status = iree_status_join(
-        status, cleanup->callback(cleanup->user_data, /*event=*/NULL,
-                                  iree_ok_status()));
-  }
-  iree_allocator_free(capture->host_allocator, capture->cleanups);
-  iree_allocator_free(capture->host_allocator, capture);
-  return status;
+  // These callbacks finalize the capture-time IREE invocation. Native graph
+  // instantiation and replay happen after this point and are owned by the
+  // embedding runtime, so their status is intentionally not routed through
+  // IREE's submission callbacks.
+  return iree_hal_hip_external_stream_capture_drain(capture, iree_ok_status());
 }
 
 static iree_status_t iree_hal_hip_external_stream_capture_retain_buffer(
@@ -712,7 +737,13 @@ static iree_status_t iree_hal_hip_external_stream_capture_retain_buffer(
   iree_hal_hip_external_stream_capture_state_t* capture =
       device->active_external_stream_capture;
   iree_status_t status = iree_ok_status();
-  if (capture != NULL) {
+  if (capture == NULL) {
+    // As in append_cleanup, reject a submission racing capture disable instead
+    // of allowing it to proceed without retaining its graph-referenced buffer.
+    status = iree_make_status(
+        IREE_STATUS_FAILED_PRECONDITION,
+        "external stream capture mode changed during allocation");
+  } else {
     status = capture->buffer_callback(capture->buffer_callback_context, buffer);
   }
   iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
@@ -726,7 +757,23 @@ static void iree_hal_hip_device_destroy(iree_hal_device_t* base_device) {
 
   const iree_hal_hip_dynamic_symbols_t* symbols = device->hip_symbols;
 
-  IREE_ASSERT(device->active_external_stream_capture == NULL);
+  iree_slim_mutex_lock(&device->external_stream_capture_mutex);
+  iree_hal_hip_external_stream_capture_state_t* abandoned_capture =
+      device->active_external_stream_capture;
+  device->active_external_stream_capture = NULL;
+  iree_atomic_store(&device->external_stream_capture_active, 0,
+                    iree_memory_order_release);
+  iree_slim_mutex_unlock(&device->external_stream_capture_mutex);
+  if (abandoned_capture != NULL) {
+    IREE_TRACE_MESSAGE(
+        ERROR,
+        "destroying HIP device with external stream capture mode enabled");
+    iree_status_ignore(iree_hal_hip_external_stream_capture_drain(
+        abandoned_capture,
+        iree_make_status(
+            IREE_STATUS_ABORTED,
+            "HIP device destroyed during external stream capture")));
+  }
 
   for (iree_host_size_t i = 0; i < device->device_count; ++i) {
     iree_hal_hip_dispatch_thread_deinitialize(
@@ -1191,7 +1238,16 @@ static void iree_hal_hip_async_buffer_release(
   iree_hal_hip_device_t* device = (iree_hal_hip_device_t*)user_data;
   void* ptr = iree_hal_hip_buffer_device_pointer(buffer);
   if (ptr) {
-    if (device->params.async_caching) {
+    if (device->supports_memory_pools) {
+      const iree_hal_buffer_placement_t placement =
+          iree_hal_buffer_allocation_placement(buffer);
+      const iree_host_size_t device_ordinal =
+          iree_math_count_trailing_zeros_u64(placement.queue_affinity);
+      IREE_ASSERT_LT(device_ordinal, device->device_count);
+      iree_status_ignore(iree_hal_hip_memory_pools_deallocate(
+          &device->devices[device_ordinal].memory_pools,
+          device->devices[device_ordinal].hip_dispatch_stream, buffer));
+    } else if (device->params.async_caching) {
       iree_hal_hip_allocator_free_async(device->device_allocator, buffer);
     } else {
       iree_hal_hip_allocator_free_sync(device->device_allocator, buffer);
@@ -2582,6 +2638,9 @@ static iree_status_t iree_hal_hip_device_complete_submission(
 
   // Read any tracing events that were submitted.
 
+  // External stream capture defers this callback without an event and rejects
+  // IREE stream tracing up front. Normal traced submissions always have the
+  // completion event required to collect and recycle their tracing events.
   if (event != NULL && iree_status_is_ok(status)) {
     iree_hal_command_buffer_t* command_buffer = data->command_buffer;
     if (iree_hal_hip_multi_queue_command_buffer_isa(command_buffer)) {
