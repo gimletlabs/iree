@@ -40,7 +40,8 @@ util.func public @channel_count(%channel: !flow.channel) -> index {
 // CHECK-LABEL: @all_reduce_sum
 util.func public @all_reduce_sum(%channel: !flow.channel, %arg0: tensor<2304xf32>) -> tensor<2304xf32> {
   // CHECK: stream.tensor.empty : tensor<2304xf32>
-  // CHECK: stream.async.collective<all_reduce with sum : f32>
+  // CHECK: %[[COUNT:.+]] = arith.constant 2304 : index
+  // CHECK: stream.async.collective<all_reduce with sum : f32>[%[[COUNT]]]
   %0 = flow.tensor.empty : tensor<2304xf32>
   %1 = flow.collective.all_reduce sum, f32, %0, %arg0, %channel : (tensor<2304xf32>, tensor<2304xf32>, !flow.channel) -> tensor<2304xf32>
   util.return %1 : tensor<2304xf32>
@@ -48,10 +49,40 @@ util.func public @all_reduce_sum(%channel: !flow.channel, %arg0: tensor<2304xf32
 
 // -----
 
+// CHECK-LABEL: @all_reduce_sum_dynamic
+// CHECK-SAME: %[[BATCH:[a-zA-Z0-9_]+]]: index)
+util.func public @all_reduce_sum_dynamic(%channel: !flow.channel, %arg0: tensor<?x2048xf32>, %batch: index) -> tensor<?x2048xf32> {
+  // CHECK-DAG: %[[STATIC_COUNT:.+]] = arith.constant 2048 : index
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[BATCH]], %[[STATIC_COUNT]] : index
+  // CHECK: stream.async.collective<all_reduce with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x2048xf32>{%batch}
+  %1 = flow.collective.all_reduce sum, f32, %0, %arg0, %channel : (tensor<?x2048xf32>, tensor<?x2048xf32>, !flow.channel) -> tensor<?x2048xf32>{%batch}
+  util.return %1 : tensor<?x2048xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_reduce_sum_multiple_dynamic_dims
+// CHECK-SAME: %[[BATCH:[a-zA-Z0-9_]+]]: index, %[[SEQ:[a-zA-Z0-9_]+]]: index)
+util.func public @all_reduce_sum_multiple_dynamic_dims(%channel: !flow.channel, %arg0: tensor<?x4x?x8xf32>, %batch: index, %seq: index) -> tensor<?x4x?x8xf32> {
+  // CHECK-DAG: %[[STATIC_COUNT:.+]] = arith.constant 32 : index
+  // CHECK: %[[PARTIAL:.+]] = arith.muli %[[BATCH]], %[[STATIC_COUNT]] : index
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[PARTIAL]], %[[SEQ]] : index
+  // CHECK: stream.async.collective<all_reduce with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x4x?x8xf32>{%batch, %seq}
+  %1 = flow.collective.all_reduce sum, f32, %0, %arg0, %channel : (tensor<?x4x?x8xf32>, tensor<?x4x?x8xf32>, !flow.channel) -> tensor<?x4x?x8xf32>{%batch, %seq}
+  util.return %1 : tensor<?x4x?x8xf32>
+}
+
+// -----
+
 // CHECK-LABEL: @all_gather
 util.func public @all_gather(%channel: !flow.channel, %arg0: tensor<512xf32>) -> tensor<1024xf32> {
   // CHECK: stream.tensor.empty : tensor<1024xf32>
-  // CHECK: stream.async.collective<all_gather : f32>
+  // CHECK: %[[COUNT:.+]] = arith.constant 1024 : index
+  // CHECK: %[[RANK_COUNT:.+]] = stream.channel.count
+  // CHECK: %[[SEND_COUNT:.+]] = arith.divui %[[COUNT]], %[[RANK_COUNT]] : index
+  // CHECK: stream.async.collective<all_gather : f32>[%[[SEND_COUNT]]]
   %0 = flow.tensor.empty : tensor<1024xf32>
   %1 = flow.collective.all_gather f32, %0, %arg0, %channel : (tensor<1024xf32>, tensor<512xf32>, !flow.channel) -> tensor<1024xf32>
   util.return %1 : tensor<1024xf32>
@@ -62,7 +93,8 @@ util.func public @all_gather(%channel: !flow.channel, %arg0: tensor<512xf32>) ->
 // CHECK-LABEL: @all_to_all
 util.func public @all_to_all(%channel: !flow.channel, %arg0: tensor<1024xf32>) -> tensor<1024xf32> {
   // CHECK: stream.tensor.empty : tensor<1024xf32>
-  // CHECK: stream.async.collective<all_to_all : f32>
+  // CHECK: %[[COUNT:.+]] = arith.constant 1024 : index
+  // CHECK: stream.async.collective<all_to_all : f32>[%[[COUNT]]]
   %0 = flow.tensor.empty : tensor<1024xf32>
   %1 = flow.collective.all_to_all f32, %0, %arg0, %channel : (tensor<1024xf32>, tensor<1024xf32>, !flow.channel) -> tensor<1024xf32>
   util.return %1 : tensor<1024xf32>
@@ -73,7 +105,8 @@ util.func public @all_to_all(%channel: !flow.channel, %arg0: tensor<1024xf32>) -
 // CHECK-LABEL: @reduce_scatter
 util.func public @reduce_scatter(%channel: !flow.channel, %arg0: tensor<4x2xf32>) -> tensor<2x2xf32> {
   // CHECK: stream.tensor.empty : tensor<2x2xf32>
-  // CHECK: stream.async.collective<reduce_scatter with sum : f32>
+  // CHECK: %[[COUNT:.+]] = arith.constant 4 : index
+  // CHECK: stream.async.collective<reduce_scatter with sum : f32>[%[[COUNT]]]
   %0 = flow.tensor.empty : tensor<2x2xf32>
   %1 = flow.collective.reduce_scatter sum, f32, %0, %arg0, %channel : (tensor<2x2xf32>, tensor<4x2xf32>, !flow.channel) -> tensor<2x2xf32>
   util.return %1 : tensor<2x2xf32>
@@ -85,6 +118,7 @@ util.func public @reduce_scatter(%channel: !flow.channel, %arg0: tensor<4x2xf32>
 // CHECK-SAME: index, %[[SEND:.+]]: index, %[[RECV:.+]]: index)
 util.func public @send_recv(%channel: !flow.channel, %arg0: tensor<1024xf32>, %send: index, %recv: index) -> tensor<1024xf32> {
   // CHECK: stream.tensor.empty : tensor<1024xf32>
+  // CHECK: %[[COUNT:.+]] = arith.constant 1024 : index
   // CHECK-DAG: %[[CST_LO_MASK:.+]] = arith.constant 65535 : i32
   // CHECK-DAG: %[[CST_SHIFT16:.+]] = arith.constant 16 : i32
   // CHECK-DAG: %[[SEND_I32:.+]]  = arith.index_cast %[[SEND]] : index to i32
@@ -92,9 +126,148 @@ util.func public @send_recv(%channel: !flow.channel, %arg0: tensor<1024xf32>, %s
   // CHECK-DAG: %[[LO:.+]] = arith.andi %[[SEND_I32]], %[[CST_LO_MASK]] : i32
   // CHECK-DAG: %[[HI:.+]] = arith.shli %[[RECV_I32]], %[[CST_SHIFT16]] : i32
   // CHECK-DAG: %[[PARAM:.+]] = arith.ori %[[HI]], %[[LO]] : i32
-  // CHECK: stream.async.collective<send_recv : f32>
+  // CHECK: stream.async.collective<send_recv : f32>[%[[COUNT]]]
   // CHECK-SAME: source_target_pair(%[[PARAM]])
   %0 = flow.tensor.empty : tensor<1024xf32>
   %1 = flow.collective.send_recv f32, %0, %arg0, %channel, %send, %recv : (tensor<1024xf32>, tensor<1024xf32>, !flow.channel, index, index) -> tensor<1024xf32>
   util.return %1 : tensor<1024xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_gather_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index)
+util.func public @all_gather_dynamic(%channel: !flow.channel, %arg0: tensor<?x4xf32>, %dim0: index) -> tensor<?x4xf32> {
+  // CHECK: %[[STATIC_COUNT:.+]] = arith.constant 4 : index
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[STATIC_COUNT]] : index
+  // CHECK: %[[RANK_COUNT:.+]] = stream.channel.count
+  // CHECK: %[[SEND_COUNT:.+]] = arith.divui %[[COUNT]], %[[RANK_COUNT]] : index
+  // CHECK: stream.async.collective<all_gather : f32>[%[[SEND_COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x4xf32>{%dim0}
+  %1 = flow.collective.all_gather f32, %0, %arg0, %channel : (tensor<?x4xf32>, tensor<?x4xf32>, !flow.channel) -> tensor<?x4xf32>{%dim0}
+  util.return %1 : tensor<?x4xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_gather_fully_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index, %[[DIM1:[a-zA-Z0-9_]+]]: index)
+util.func public @all_gather_fully_dynamic(%channel: !flow.channel, %arg0: tensor<?x?xf32>, %dim0: index, %dim1: index) -> tensor<?x?xf32> {
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[DIM1]] : index
+  // CHECK: %[[RANK_COUNT:.+]] = stream.channel.count
+  // CHECK: %[[SEND_COUNT:.+]] = arith.divui %[[COUNT]], %[[RANK_COUNT]] : index
+  // CHECK: stream.async.collective<all_gather : f32>[%[[SEND_COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x?xf32>{%dim0, %dim1}
+  %1 = flow.collective.all_gather f32, %0, %arg0, %channel : (tensor<?x?xf32>, tensor<?x?xf32>, !flow.channel) -> tensor<?x?xf32>{%dim0, %dim1}
+  util.return %1 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_reduce_fully_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index, %[[DIM1:[a-zA-Z0-9_]+]]: index)
+util.func public @all_reduce_fully_dynamic(%channel: !flow.channel, %arg0: tensor<?x?xf32>, %dim0: index, %dim1: index) -> tensor<?x?xf32> {
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[DIM1]] : index
+  // CHECK: stream.async.collective<all_reduce with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x?xf32>{%dim0, %dim1}
+  %1 = flow.collective.all_reduce sum, f32, %0, %arg0, %channel : (tensor<?x?xf32>, tensor<?x?xf32>, !flow.channel) -> tensor<?x?xf32>{%dim0, %dim1}
+  util.return %1 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_to_all_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index)
+util.func public @all_to_all_dynamic(%channel: !flow.channel, %arg0: tensor<?x4xf32>, %dim0: index) -> tensor<?x4xf32> {
+  // CHECK: %[[STATIC_COUNT:.+]] = arith.constant 4 : index
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[STATIC_COUNT]] : index
+  // CHECK: stream.async.collective<all_to_all : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x4xf32>{%dim0}
+  %1 = flow.collective.all_to_all f32, %0, %arg0, %channel : (tensor<?x4xf32>, tensor<?x4xf32>, !flow.channel) -> tensor<?x4xf32>{%dim0}
+  util.return %1 : tensor<?x4xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_to_all_fully_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index, %[[DIM1:[a-zA-Z0-9_]+]]: index)
+util.func public @all_to_all_fully_dynamic(%channel: !flow.channel, %arg0: tensor<?x?xf32>, %dim0: index, %dim1: index) -> tensor<?x?xf32> {
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[DIM1]] : index
+  // CHECK: stream.async.collective<all_to_all : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x?xf32>{%dim0, %dim1}
+  %1 = flow.collective.all_to_all f32, %0, %arg0, %channel : (tensor<?x?xf32>, tensor<?x?xf32>, !flow.channel) -> tensor<?x?xf32>{%dim0, %dim1}
+  util.return %1 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @reduce_scatter_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index)
+util.func public @reduce_scatter_dynamic(%channel: !flow.channel, %arg0: tensor<?x8xf32>, %dim0: index) -> tensor<?x4xf32> {
+  // CHECK: %[[STATIC_COUNT:.+]] = arith.constant 4 : index
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[STATIC_COUNT]] : index
+  // CHECK: stream.async.collective<reduce_scatter with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x4xf32>{%dim0}
+  %1 = flow.collective.reduce_scatter sum, f32, %0, %arg0, %channel : (tensor<?x4xf32>, tensor<?x8xf32>, !flow.channel) -> tensor<?x4xf32>{%dim0}
+  util.return %1 : tensor<?x4xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @reduce_scatter_fully_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index, %[[DIM1:[a-zA-Z0-9_]+]]: index)
+util.func public @reduce_scatter_fully_dynamic(%channel: !flow.channel, %arg0: tensor<?x?xf32>, %dim0: index, %dim1: index) -> tensor<?x?xf32> {
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[DIM1]] : index
+  // CHECK: stream.async.collective<reduce_scatter with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x?xf32>{%dim0, %dim1}
+  %1 = flow.collective.reduce_scatter sum, f32, %0, %arg0, %channel : (tensor<?x?xf32>, tensor<?x?xf32>, !flow.channel) -> tensor<?x?xf32>{%dim0, %dim1}
+  util.return %1 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @send_recv_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index, %[[SEND:[a-zA-Z0-9_]+]]: index, %[[RECV:[a-zA-Z0-9_]+]]: index)
+util.func public @send_recv_dynamic(%channel: !flow.channel, %arg0: tensor<?x4xf32>, %dim0: index, %send: index, %recv: index) -> tensor<?x4xf32> {
+  // CHECK: %[[STATIC_COUNT:.+]] = arith.constant 4 : index
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[STATIC_COUNT]] : index
+  // CHECK: stream.async.collective<send_recv : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x4xf32>{%dim0}
+  %1 = flow.collective.send_recv f32, %0, %arg0, %channel, %send, %recv : (tensor<?x4xf32>, tensor<?x4xf32>, !flow.channel, index, index) -> tensor<?x4xf32>{%dim0}
+  util.return %1 : tensor<?x4xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @send_recv_fully_dynamic
+// CHECK-SAME: %[[DIM0:[a-zA-Z0-9_]+]]: index, %[[DIM1:[a-zA-Z0-9_]+]]: index, %[[SEND:[a-zA-Z0-9_]+]]: index, %[[RECV:[a-zA-Z0-9_]+]]: index)
+util.func public @send_recv_fully_dynamic(%channel: !flow.channel, %arg0: tensor<?x?xf32>, %dim0: index, %dim1: index, %send: index, %recv: index) -> tensor<?x?xf32> {
+  // CHECK: %[[COUNT:.+]] = arith.muli %[[DIM0]], %[[DIM1]] : index
+  // CHECK: stream.async.collective<send_recv : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x?xf32>{%dim0, %dim1}
+  %1 = flow.collective.send_recv f32, %0, %arg0, %channel, %send, %recv : (tensor<?x?xf32>, tensor<?x?xf32>, !flow.channel, index, index) -> tensor<?x?xf32>{%dim0, %dim1}
+  util.return %1 : tensor<?x?xf32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_reduce_scalar
+util.func public @all_reduce_scalar(%channel: !flow.channel, %arg0: tensor<f32>) -> tensor<f32> {
+  // CHECK: %[[COUNT:.+]] = arith.constant 1 : index
+  // CHECK: stream.async.collective<all_reduce with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<f32>
+  %1 = flow.collective.all_reduce sum, f32, %0, %arg0, %channel : (tensor<f32>, tensor<f32>, !flow.channel) -> tensor<f32>
+  util.return %1 : tensor<f32>
+}
+
+// -----
+
+// CHECK-LABEL: @all_reduce_zero_extent
+util.func public @all_reduce_zero_extent(%channel: !flow.channel, %arg0: tensor<?x0xf32>, %dim: index) -> tensor<?x0xf32> {
+  // CHECK: arith.constant 0 : index
+  // CHECK: %[[COUNT:.+]] = arith.constant 0 : index
+  // CHECK: stream.async.collective<all_reduce with sum : f32>[%[[COUNT]]]
+  %0 = flow.tensor.empty : tensor<?x0xf32>{%dim}
+  %1 = flow.collective.all_reduce sum, f32, %0, %arg0, %channel : (tensor<?x0xf32>, tensor<?x0xf32>, !flow.channel) -> tensor<?x0xf32>{%dim}
+  util.return %1 : tensor<?x0xf32>
 }

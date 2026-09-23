@@ -30,6 +30,23 @@ static SmallVector<Value> flattenValues(ArrayRef<ValueRange> values) {
   return vec;
 }
 
+// Computes the logical element count, independently of the storage encoding.
+static Value buildElementCount(Location loc, RankedTensorType type,
+                               ValueRange dynamicDims, OpBuilder &builder) {
+  int64_t staticCount = 1;
+  for (int64_t dim : type.getShape()) {
+    if (!ShapedType::isDynamic(dim)) {
+      staticCount *= dim;
+    }
+  }
+  Value elementCount =
+      arith::ConstantIndexOp::create(builder, loc, staticCount);
+  for (Value dim : dynamicDims) {
+    elementCount = builder.createOrFold<arith::MulIOp>(loc, elementCount, dim);
+  }
+  return elementCount;
+}
+
 // Inserts a sizeof calculation for the given tensor value type and dims.
 // This should only be used to produce sizes for values produced by an op; the
 // size of operands must be queried from the input resource.
@@ -634,8 +651,15 @@ struct ConvertAllGatherOp
         static_cast<IREE::Stream::CollectiveElementType>(op.getElementType()));
 
     auto zeroOffset = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-    auto elementCount = arith::ConstantIndexOp::create(
-        rewriter, op.getLoc(), op.getType().getNumElements());
+    Value elementCount =
+        buildElementCount(op.getLoc(), op.getType(),
+                          flattenValues(adaptor.getTargetDims()), rewriter);
+    // All-gather counts the elements sent by each rank, while target dims
+    // describe the concatenated result from all ranks.
+    auto rankCount = IREE::Stream::ChannelCountOp::create(
+        rewriter, op.getLoc(), adaptor.getChannel().front());
+    elementCount = rewriter.createOrFold<arith::DivUIOp>(
+        op.getLoc(), elementCount, rankCount);
     auto newTargetCast =
         transferTensorOperands(op.getLoc(), op.getTarget(), adaptor.getTarget(),
                                executionAffinityAttr, rewriter);
@@ -677,8 +701,9 @@ struct ConvertAllReduceOp
         static_cast<IREE::Stream::CollectiveElementType>(op.getElementType()));
 
     auto zeroOffset = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-    auto elementCount = arith::ConstantIndexOp::create(
-        rewriter, op.getLoc(), op.getType().getNumElements());
+    Value elementCount =
+        buildElementCount(op.getLoc(), op.getType(),
+                          flattenValues(adaptor.getTargetDims()), rewriter);
     auto newTargetCast =
         transferTensorOperands(op.getLoc(), op.getTarget(), adaptor.getTarget(),
                                executionAffinityAttr, rewriter);
@@ -720,8 +745,9 @@ struct ConvertAllToAllOp
         static_cast<IREE::Stream::CollectiveElementType>(op.getElementType()));
 
     auto zeroOffset = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-    auto elementCount = arith::ConstantIndexOp::create(
-        rewriter, op.getLoc(), op.getType().getNumElements());
+    Value elementCount =
+        buildElementCount(op.getLoc(), op.getType(),
+                          flattenValues(adaptor.getTargetDims()), rewriter);
     auto newTargetCast =
         transferTensorOperands(op.getLoc(), op.getTarget(), adaptor.getTarget(),
                                executionAffinityAttr, rewriter);
@@ -763,8 +789,9 @@ struct ConvertReduceScatterOp
         static_cast<IREE::Stream::CollectiveElementType>(op.getElementType()));
 
     auto zeroOffset = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-    auto elementCount = arith::ConstantIndexOp::create(
-        rewriter, op.getLoc(), op.getType().getNumElements());
+    Value elementCount =
+        buildElementCount(op.getLoc(), op.getType(),
+                          flattenValues(adaptor.getTargetDims()), rewriter);
     auto newTargetCast =
         transferTensorOperands(op.getLoc(), op.getTarget(), adaptor.getTarget(),
                                executionAffinityAttr, rewriter);
@@ -806,8 +833,9 @@ struct ConvertCollectiveSendRecvOp
         static_cast<IREE::Stream::CollectiveElementType>(op.getElementType()));
 
     auto zeroOffset = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-    auto elementCount = arith::ConstantIndexOp::create(
-        rewriter, op.getLoc(), op.getType().getNumElements());
+    Value elementCount =
+        buildElementCount(op.getLoc(), op.getType(),
+                          flattenValues(adaptor.getTargetDims()), rewriter);
     auto newTargetCast =
         transferTensorOperands(op.getLoc(), op.getTarget(), adaptor.getTarget(),
                                executionAffinityAttr, rewriter);
