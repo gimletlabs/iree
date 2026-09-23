@@ -222,7 +222,11 @@ IREE_API_EXPORT iree_status_t iree_vm_ref_retain_or_move_checked(
   return iree_ok_status();
 }
 
-IREE_API_EXPORT void iree_vm_ref_release(iree_vm_ref_t* ref) {
+// HAL destroy helpers use typed pointers; callers store them behind
+// iree_vm_ref_destroy_t. Clang UBSan's function checker still validates the
+// resolved symbol despite the erased type.
+IREE_ATTRIBUTE_NO_UBSAN_FUNCTION IREE_API_EXPORT void iree_vm_ref_release(
+    iree_vm_ref_t* ref) {
   IREE_VM_REF_ASSERT(ref);
   iree_vm_ref_t temp_ref = *ref;
   if (temp_ref.type == IREE_VM_REF_TYPE_NULL || temp_ref.ptr == NULL) return;

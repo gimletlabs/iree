@@ -146,8 +146,9 @@ static iree_status_t iree_task_topologies_select_nodes_from_flags(
   uint64_t node_mask = 0ull;
   if (iree_string_view_is_empty(nodes_flag) ||
       iree_string_view_equal(nodes_flag, IREE_SV("current"))) {
-    // Use a single default node.
-    node_mask = 1ull << iree_task_topology_query_current_node();
+    // Use a single default node. sysfs cluster_id can exceed 63; fold into the
+    // 64-bit mask (shifts by >=64 are undefined).
+    node_mask = 1ull << (iree_task_topology_query_current_node() % 64u);
   } else if (iree_string_view_equal(nodes_flag, IREE_SV("all"))) {
     // Use all nodes in the system (set bits starting at 0 for each node).
     node_mask = UINT64_MAX >> (64 - available_node_count);

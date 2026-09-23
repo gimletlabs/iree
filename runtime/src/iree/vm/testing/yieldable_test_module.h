@@ -45,7 +45,9 @@ typedef struct yieldable_test_module_state_t {
 static iree_status_t yieldable_test_module_yield_variadic_sum_shim(
     iree_vm_stack_t* stack, iree_vm_native_function_flags_t flags,
     iree_byte_span_t args_storage, iree_byte_span_t rets_storage,
-    void* target_fn, void* module, void* module_state_ptr) {
+    iree_vm_native_function_target2_t target_fn, void* module,
+    void* module_state_ptr) {
+  (void)target_fn;
   yieldable_test_module_state_t* state =
       (yieldable_test_module_state_t*)module_state_ptr;
 
@@ -137,7 +139,9 @@ static iree_status_t yieldable_test_module_yield_variadic_sum_shim(
 static iree_status_t yieldable_test_module_yield_n_shim(
     iree_vm_stack_t* stack, iree_vm_native_function_flags_t flags,
     iree_byte_span_t args_storage, iree_byte_span_t rets_storage,
-    void* target_fn, void* module, void* module_state_ptr) {
+    iree_vm_native_function_target2_t target_fn, void* module,
+    void* module_state_ptr) {
+  (void)target_fn;
   yieldable_test_module_state_t* state =
       (yieldable_test_module_state_t*)module_state_ptr;
 

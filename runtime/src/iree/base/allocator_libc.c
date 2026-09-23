@@ -23,7 +23,12 @@ static iree_status_t iree_allocator_libc_alloc(
                             "allocations must be >0 bytes");
   }
 
-  void* existing_ptr = *inout_ptr;
+  // Only REALLOC reads *inout_ptr; MALLOC/CALLOC callers often pass an
+  // uninitialized destination pointer (documented as an out-parameter only).
+  void* existing_ptr = NULL;
+  if (command == IREE_ALLOCATOR_COMMAND_REALLOC) {
+    existing_ptr = *inout_ptr;
+  }
 
   IREE_TRACE(iree_zone_id_t z0 = 0);
   IREE_TRACE({
