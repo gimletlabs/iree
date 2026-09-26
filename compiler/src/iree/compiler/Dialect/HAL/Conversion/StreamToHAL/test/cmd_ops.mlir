@@ -546,3 +546,30 @@ util.func public @cmdFill(%res0: !stream.resource<constant>, %res1: !stream.reso
   %0 = "some.op"(%signal, %c255_i32) : (!stream.timepoint, i32) -> (!stream.timepoint)
   util.return %0 : !stream.timepoint
 }
+
+// -----
+
+// Signature conversion replaces the argument block when lowering the channel.
+// Fence reuse must query the remapped signal argument, not the detached block.
+util.global private @device : !hal.device
+
+// CHECK-LABEL: @cmdCollectiveExternalFence
+// CHECK-SAME: %[[CHANNEL:[^:]+]]: !hal.channel, %[[SIGNAL:[^:]+]]: !hal.fence
+util.func public @cmdCollectiveExternalFence(%input: !stream.resource<external>, %output: !stream.resource<external>, %channel: !stream.channel, %signal: !hal.fence) {
+  %c0 = arith.constant 0 : index
+  %c128 = arith.constant 128 : index
+  // CHECK-NOT: hal.fence.create
+  %done = stream.cmd.execute on(#hal.device.affinity<@device>) with(%input as %source: !stream.resource<external>{%c128}, %output as %target: !stream.resource<external>{%c128}) {
+    // CHECK: hal.command_buffer.collective
+    // CHECK-SAME: channel(%[[CHANNEL]] : !hal.channel)
+    stream.cmd.collective<all_reduce with sum : si8>[%c128] channel(%channel) {
+      ro %source[%c0 for %c128] : !stream.resource<external>{%c128},
+      wo %target[%c0 for %c128] : !stream.resource<external>{%c128}
+    }
+  } => !stream.timepoint
+  // CHECK: hal.device.queue.execute
+  // CHECK-SAME: signal(%[[SIGNAL]])
+  stream.timepoint.chain_external on(#hal.device.affinity<@device>) %done => (%signal : !hal.fence)
+  // CHECK: util.return
+  util.return
+}
