@@ -49,7 +49,7 @@ Value getOrCreateWaitFence(Location loc, Value timepointFence,
 // associated with an external fence. Returns util.null if no one observes the
 // fence.
 Value getOrCreateSignalFence(Location loc, Value device, Value timepoint,
-                             PatternRewriter &rewriter);
+                             ConversionPatternRewriter &rewriter);
 
 // Scans all of the stream.cmd.* ops in the region to derive a command category.
 IREE::HAL::CommandCategoryBitfield deriveCommandCategories(Region &region);

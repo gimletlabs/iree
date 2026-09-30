@@ -114,7 +114,8 @@ Value getOrCreateWaitFence(Location loc, Value timepointFence,
 // Finds a !hal.fence bound to |timepoint| via a chain op and returns it if
 // it is usable at the builder insertion point. The chain ops is only used if
 // it is the only consumer of the timepoint and it is removed upon return.
-static Value consumeBoundFence(Value timepoint, PatternRewriter &rewriter) {
+static Value consumeBoundFence(Value timepoint,
+                               ConversionPatternRewriter &rewriter) {
   // Must only have one use. We can't consume a fence multiple times.
   if (!timepoint.hasOneUse()) {
     return nullptr; // >1 use
@@ -127,7 +128,7 @@ static Value consumeBoundFence(Value timepoint, PatternRewriter &rewriter) {
     return nullptr; // non-export use
   }
   assert(!chainOp.getExternalValues().empty());
-  auto fence = chainOp.getExternalValues().front();
+  auto fence = rewriter.getRemappedValue(chainOp.getExternalValues().front());
   if (!fence || !isa<IREE::HAL::FenceType>(fence.getType())) {
     return nullptr;
   }
@@ -150,7 +151,7 @@ static Value consumeBoundFence(Value timepoint, PatternRewriter &rewriter) {
 }
 
 Value getOrCreateSignalFence(Location loc, Value device, Value timepoint,
-                             PatternRewriter &rewriter) {
+                             ConversionPatternRewriter &rewriter) {
   // Handle nullptr timepoint (from TimelineOps with no result timepoint) or
   // timepoints with no consumers by returning a null fence.
   if (!timepoint || timepoint.use_empty()) {
