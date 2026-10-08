@@ -83,6 +83,7 @@ static inline void iree_hal_resource_retain(const void* any_resource) {
 // This routes through the vtable and can disable optimizations; always prefer
 // to use the type-specific release functions (such as iree_hal_buffer_release)
 // to allow for more optimizations and better compile-time type safety.
+IREE_ATTRIBUTE_NO_UBSAN_FUNCTION
 static inline void iree_hal_resource_release(const void* any_resource) {
   iree_hal_resource_t* resource = (iree_hal_resource_t*)any_resource;
   if (IREE_LIKELY(resource) &&

@@ -46,12 +46,11 @@ typedef iree_status_t (*call_i32_i32_t)(iree_vm_stack_t* stack,
 // This approach is most useful when the function may also be exported/used by
 // non-VM code or may be internally referenced using a target-specific ABI.
 // TODO(benvanik): generate/export these shims/call functions in stack.h.
-static iree_status_t call_shim_i32_i32(iree_vm_stack_t* stack,
-                                       iree_vm_native_function_flags_t flags,
-                                       iree_byte_span_t args_storage,
-                                       iree_byte_span_t rets_storage,
-                                       call_i32_i32_t target_fn, void* module,
-                                       void* module_state) {
+static iree_status_t call_shim_i32_i32(
+    iree_vm_stack_t* stack, iree_vm_native_function_flags_t flags,
+    iree_byte_span_t args_storage, iree_byte_span_t rets_storage,
+    iree_vm_native_function_target2_t target_fn, void* module,
+    void* module_state) {
   // We can use structs to allow compiler-controlled indexing optimizations,
   // though this won't work for variadic cases.
   // TODO(benvanik): packed attributes.
@@ -66,7 +65,8 @@ static iree_status_t call_shim_i32_i32(iree_vm_stack_t* stack,
   results_t* results = (results_t*)rets_storage.data;
 
   // For simple cases like this (zero or 1 result) we can tail-call.
-  return target_fn(stack, module, module_state, args->arg0, &results->ret0);
+  call_i32_i32_t user_fn = (call_i32_i32_t)(void*)target_fn;
+  return user_fn(stack, module, module_state, args->arg0, &results->ret0);
 }
 
 //===----------------------------------------------------------------------===//
@@ -106,9 +106,9 @@ static const iree_vm_native_export_descriptor_t module_a_exports_[] = {
 };
 static const iree_vm_native_function_ptr_t module_a_funcs_[] = {
     {(iree_vm_native_function_shim_t)call_shim_i32_i32,
-     (iree_vm_native_function_target_t)module_a_add_1},
+     (iree_vm_native_function_target2_t)module_a_add_1},
     {(iree_vm_native_function_shim_t)call_shim_i32_i32,
-     (iree_vm_native_function_target_t)module_a_sub_1},
+     (iree_vm_native_function_target2_t)module_a_sub_1},
 };
 static_assert(IREE_ARRAYSIZE(module_a_funcs_) ==
                   IREE_ARRAYSIZE(module_a_exports_),
@@ -260,7 +260,7 @@ static iree_status_t module_b_entry(iree_vm_stack_t* stack, module_b_t* module,
 // on versions, access rights, etc.
 static const iree_vm_native_function_ptr_t module_b_funcs_[] = {
     {(iree_vm_native_function_shim_t)call_shim_i32_i32,
-     (iree_vm_native_function_target_t)module_b_entry},
+     (iree_vm_native_function_target2_t)module_b_entry},
 };
 
 static const iree_vm_native_import_descriptor_t module_b_imports_[] = {
@@ -453,19 +453,19 @@ static const iree_vm_native_export_descriptor_t module_c_align_exports_[] = {
 
 static const iree_vm_native_function_ptr_t module_c_align_funcs_[] = {
     {(iree_vm_native_function_shim_t)iree_vm_shim_i_i,
-     (iree_vm_native_function_target_t)module_c_align_entry},
+     (iree_vm_native_function_target2_t)module_c_align_entry},
     {(iree_vm_native_function_shim_t)iree_vm_shim_iI_I,
-     (iree_vm_native_function_target_t)module_c_align_mixed_i32_i64},
+     (iree_vm_native_function_target2_t)module_c_align_mixed_i32_i64},
     {(iree_vm_native_function_shim_t)iree_vm_shim_iIi_I,
-     (iree_vm_native_function_target_t)module_c_align_mixed_i32_i64_i32},
+     (iree_vm_native_function_target2_t)module_c_align_mixed_i32_i64_i32},
     {(iree_vm_native_function_shim_t)iree_vm_shim_ir_i,
-     (iree_vm_native_function_target_t)module_c_align_mixed_i32_ref},
+     (iree_vm_native_function_target2_t)module_c_align_mixed_i32_ref},
     {(iree_vm_native_function_shim_t)iree_vm_shim_iiir_i,
-     (iree_vm_native_function_target_t)module_c_align_mixed_i32x3_ref},
+     (iree_vm_native_function_target2_t)module_c_align_mixed_i32x3_ref},
     {(iree_vm_native_function_shim_t)iree_vm_shim_Ii_i,
-     (iree_vm_native_function_target_t)module_c_align_mixed_i64_i32},
+     (iree_vm_native_function_target2_t)module_c_align_mixed_i64_i32},
     {(iree_vm_native_function_shim_t)iree_vm_shim_rir_i,
-     (iree_vm_native_function_target_t)module_c_align_mixed_ref_i32_ref},
+     (iree_vm_native_function_target2_t)module_c_align_mixed_ref_i32_ref},
 };
 
 static_assert(IREE_ARRAYSIZE(module_c_align_funcs_) ==

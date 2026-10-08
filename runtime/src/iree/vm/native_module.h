@@ -54,6 +54,11 @@ typedef struct iree_vm_native_export_descriptor_t {
 typedef iree_status_t(IREE_API_PTR* iree_vm_native_function_target_t)(
     iree_vm_stack_t* stack, void* module, void* module_state);
 
+// Target functions called by IREE_VM_ABI_* shims after unmarshaling args/rets.
+typedef iree_status_t(IREE_API_PTR* iree_vm_native_function_target2_t)(
+    iree_vm_stack_t* stack, void* module, void* module_state, const void* args,
+    void* rets);
+
 enum iree_vm_native_function_flag_bits_t {
   IREE_VM_NATIVE_FUNCTION_CALL_BEGIN = 1u << 0,
   IREE_VM_NATIVE_FUNCTION_CALL_RESUME = 1u << 1,
@@ -63,7 +68,7 @@ typedef uint32_t iree_vm_native_function_flags_t;
 typedef iree_status_t(IREE_API_PTR* iree_vm_native_function_shim_t)(
     iree_vm_stack_t* stack, iree_vm_native_function_flags_t flags,
     iree_byte_span_t args_storage, iree_byte_span_t rets_storage,
-    iree_vm_native_function_target_t target_fn, void* module,
+    iree_vm_native_function_target2_t target_fn, void* module,
     void* module_state);
 
 // An entry in the function pointer table.
@@ -71,7 +76,7 @@ typedef struct iree_vm_native_function_ptr_t {
   // A shim function that takes the VM ABI and maps it to the target ABI.
   iree_vm_native_function_shim_t shim;
   // Target function passed to the shim.
-  iree_vm_native_function_target_t target;
+  iree_vm_native_function_target2_t target;
 } iree_vm_native_function_ptr_t;
 
 // Describes a native module implementation by way of descriptor tables.
