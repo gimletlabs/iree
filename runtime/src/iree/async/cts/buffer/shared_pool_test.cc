@@ -307,37 +307,21 @@ TEST_P(SharedBufferPoolTest, OpenValidatesBufferSizeMismatch) {
   IREE_ASSERT_OK(
       iree_async_buffer_pool_shared_storage_size(kBufferCount, &pool_storage));
 
-  // Open a second mapping of the SHM region.
-  iree_shm_handle_t dup_handle = IREE_SHM_HANDLE_INVALID;
-  IREE_ASSERT_OK(iree_shm_handle_dup(creator.shm.handle, &dup_handle));
-  iree_shm_mapping_t opener_shm;
-  IREE_ASSERT_OK(
-      iree_shm_open_handle(dup_handle, creator.shm.size, &opener_shm));
-  iree_shm_handle_close(&dup_handle);
+  // Corrupt the header's buffer size to test the mismatch with the existing
+  // registration. It follows the 32-bit magic and version fields.
+  auto* buffer_size = reinterpret_cast<uint64_t*>(
+      static_cast<uint8_t*>(creator.shm.base) + 2 * sizeof(uint32_t));
+  uint64_t saved_buffer_size = *buffer_size;
+  *buffer_size = kBufferSize / 2;
 
-  // Wrap with a different buffer_size to create a mismatched region.
-  // Register with WRITE access to avoid the singleton fixed-buffer-table
-  // constraint (READ uses fixed buffers, WRITE uses provided buffers).
-  iree_async_slab_t* slab = nullptr;
-  IREE_ASSERT_OK(iree_async_slab_wrap((uint8_t*)opener_shm.base + pool_storage,
-                                      /*buffer_size=*/512, kBufferCount,
-                                      iree_allocator_system(), &slab));
-  iree_async_region_t* region = nullptr;
-  IREE_ASSERT_OK(iree_async_proactor_register_slab(
-      proactor_, slab, IREE_ASYNC_BUFFER_ACCESS_FLAG_WRITE, &region));
-
-  // open_shared should detect the buffer_size mismatch (header says 4096,
-  // region says 512).
   iree_async_buffer_pool_t* pool = nullptr;
-  IREE_EXPECT_STATUS_IS(
-      IREE_STATUS_INVALID_ARGUMENT,
-      iree_async_buffer_pool_open_shared(opener_shm.base, pool_storage, region,
-                                         iree_allocator_system(), &pool));
+  IREE_EXPECT_STATUS_IS(IREE_STATUS_INVALID_ARGUMENT,
+                        iree_async_buffer_pool_open_shared(
+                            creator.shm.base, pool_storage, creator.region,
+                            iree_allocator_system(), &pool));
   EXPECT_EQ(pool, nullptr);
 
-  iree_async_region_release(region);
-  iree_async_slab_release(slab);
-  iree_shm_close(&opener_shm);
+  *buffer_size = saved_buffer_size;
   TeardownSide(&creator);
 }
 
